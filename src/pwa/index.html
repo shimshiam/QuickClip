@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#1a1e2e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="QuickClip">
+  <meta name="description" content="Share clipboard & files between iPhone and Windows instantly over your local network.">
+
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="manifest" href="/manifest.json">
+
+  <link rel="stylesheet" href="/styles.css">
+  <title>QuickClip</title>
+</head>
+<body>
+  <!-- ─── Header ─── -->
+  <header id="app-header">
+    <div class="header-content">
+      <h1 class="header-title">QuickClip</h1>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button class="theme-toggle" id="pwa-theme-toggle" aria-label="Toggle theme">
+          <svg class="theme-icon theme-icon--sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"/>
+            <line x1="12" y1="1" x2="12" y2="3"/>
+            <line x1="12" y1="21" x2="12" y2="23"/>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+            <line x1="1" y1="12" x2="3" y2="12"/>
+            <line x1="21" y1="12" x2="23" y2="12"/>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+          </svg>
+          <svg class="theme-icon theme-icon--moon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+          </svg>
+        </button>
+        <div class="connection-indicator">
+          <span id="status-dot" class="status-dot"></span>
+          <span id="status-text" class="status-text">Connecting</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- ─── Main Content ─── -->
+  <main id="app-main">
+    <!-- Clipboard Tab -->
+    <section id="tab-clipboard" class="tab-panel active">
+      <div class="tab-scroll-area">
+        <div class="send-action-area">
+          <button id="btn-send-clipboard" class="btn-send-primary" disabled>
+            <span class="btn-send-icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+                <path d="M9 14l2 2 4-4"/>
+              </svg>
+            </span>
+            <span class="btn-send-label">Send Clipboard</span>
+            <span class="btn-send-sub">Tap to send iPhone clipboard to Windows</span>
+          </button>
+        </div>
+
+        <p id="delivery-status" role="status" aria-live="polite"></p>
+        <button id="retry-clipboard" class="item-action-btn" hidden>Retry transfer</button>
+        <div class="section-header">
+          <h2 class="section-title">Clipboard history</h2>
+          <span id="clipboard-count" class="section-badge">0</span>
+        </div>
+
+        <div id="clipboard-list" class="items-list">
+          <div class="empty-state" id="clipboard-empty">
+            <div class="empty-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.3">
+                <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+                <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+              </svg>
+            </div>
+            <p class="empty-text">No clipboard items yet</p>
+            <p class="empty-sub">Items copied on Windows will appear here</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Files Tab -->
+    <section id="tab-files" class="tab-panel">
+      <div class="tab-scroll-area">
+        <div class="send-action-area">
+          <button id="btn-send-file" class="btn-send-primary btn-send-files" disabled>
+            <span class="btn-send-icon">
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="12" y1="18" x2="12" y2="12"/>
+                <polyline points="9 15 12 12 15 15"/>
+              </svg>
+            </span>
+            <span class="btn-send-label">Send File</span>
+            <span class="btn-send-sub">Tap to send a file to Windows</span>
+          </button>
+          <input type="file" id="file-input" hidden>
+        </div>
+
+        <!-- Upload progress -->
+        <div id="upload-progress" class="upload-progress hidden">
+          <div class="upload-progress-info">
+            <span id="upload-filename" class="upload-filename"></span>
+            <span id="upload-percent" class="upload-percent">0%</span>
+          </div>
+          <div class="upload-progress-bar">
+            <div id="upload-bar-fill" class="upload-bar-fill"></div>
+          </div>
+        </div>
+
+        <div class="section-header">
+          <h2 class="section-title">Shared files</h2>
+          <span id="files-count" class="section-badge">0</span>
+        </div>
+
+        <div id="files-list" class="items-list">
+          <div class="empty-state" id="files-empty">
+            <div class="empty-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.3">
+                <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+              </svg>
+            </div>
+            <p class="empty-text">No files shared yet</p>
+            <p class="empty-sub">Files shared from Windows will appear here</p>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ─── Bottom Tab Bar ─── -->
+  <nav id="tab-bar">
+    <button class="tab-btn active" data-tab="clipboard" id="nav-clipboard">
+      <svg class="tab-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="8" y="2" width="8" height="4" rx="1" ry="1"/>
+        <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
+      </svg>
+      <span class="tab-label">Clipboard</span>
+    </button>
+    <button class="tab-btn" data-tab="files" id="nav-files">
+      <svg class="tab-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+      </svg>
+      <span class="tab-label">Files</span>
+    </button>
+  </nav>
+
+  <!-- ─── Connection Overlay ─── -->
+  <div id="connection-overlay" class="connection-overlay">
+    <div class="overlay-content">
+      <div class="spinner"></div>
+      <h2 class="overlay-title">Connecting to QuickClip</h2>
+      <p class="overlay-sub" id="overlay-status">Looking for your PC on the network…</p>
+    </div>
+  </div>
+
+  <!-- ─── Toast Container ─── -->
+  <div id="toast-container" class="toast-container"></div>
+
+  <script src="/delivery.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>

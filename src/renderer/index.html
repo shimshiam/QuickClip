@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self';" />
+  <title>QuickClip</title>
+
+  <link rel="stylesheet" href="renderer.css" />
+</head>
+<body>
+
+  <!-- ====== Header ====== -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="app-logo">
+        <svg class="logo-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="url(#logoGrad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <defs>
+            <linearGradient id="logoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#2a2e3a" />
+              <stop offset="100%" stop-color="#1a1e28" />
+            </linearGradient>
+          </defs>
+          <rect x="3" y="3" width="18" height="18" rx="4" />
+          <path d="M8 12h8M12 8v8" />
+        </svg>
+        <h1 class="app-title">QuickClip</h1>
+      </div>
+    </div>
+    <div class="header-right">
+      <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">
+        <svg class="theme-icon theme-icon--sun" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="5"/>
+          <line x1="12" y1="1" x2="12" y2="3"/>
+          <line x1="12" y1="21" x2="12" y2="23"/>
+          <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/>
+          <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+          <line x1="1" y1="12" x2="3" y2="12"/>
+          <line x1="21" y1="12" x2="23" y2="12"/>
+          <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+          <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+        </svg>
+        <svg class="theme-icon theme-icon--moon" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+        </svg>
+      </button>
+      <div class="connection-badge" id="connectionBadge">
+        <span class="status-dot disconnected" id="statusDot"></span>
+        <span class="status-text" id="statusText">No Devices</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- ====== Tab Navigation ====== -->
+  <nav class="tab-nav">
+    <div class="tab-list" role="tablist">
+      <button class="tab-btn active" role="tab" data-tab="pair" aria-selected="true">
+        <svg class="tab-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2" y="2" width="20" height="20" rx="3" />
+          <rect x="6" y="6" width="12" height="12" rx="1" />
+          <rect x="9" y="9" width="6" height="6" />
+        </svg>
+        Pair
+      </button>
+      <button class="tab-btn" role="tab" data-tab="clipboard" aria-selected="false">
+        <svg class="tab-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2" />
+          <rect x="8" y="2" width="8" height="4" rx="1" />
+        </svg>
+        Clipboard
+      </button>
+      <button class="tab-btn" role="tab" data-tab="files" aria-selected="false">
+        <svg class="tab-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+        </svg>
+        Files
+      </button>
+      <button class="tab-btn" role="tab" data-tab="settings" aria-selected="false">
+        <svg class="tab-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z" />
+        </svg>
+        Settings
+      </button>
+      <div class="tab-indicator" id="tabIndicator"></div>
+    </div>
+  </nav>
+
+  <!-- ====== Tab Panels ====== -->
+  <main class="tab-content">
+
+    <!-- Pair Tab -->
+    <section class="tab-panel active" id="panel-pair" role="tabpanel">
+      <div class="pair-container">
+        <div class="qr-wrapper">
+          <div class="qr-glow"></div>
+          <div class="qr-frame">
+            <img id="qrCodeImage" class="qr-image" alt="QR Code" />
+            <div class="qr-placeholder" id="qrPlaceholder">
+              <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="var(--text-secondary)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="2" y="2" width="20" height="20" rx="3" />
+                <rect x="6" y="6" width="4" height="4" />
+                <rect x="14" y="6" width="4" height="4" />
+                <rect x="6" y="14" width="4" height="4" />
+                <circle cx="16" cy="16" r="2" />
+              </svg>
+              <span>Generating QR code…</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="server-url-wrap" id="serverUrlWrap" title="Click to copy server URL">
+          <span class="server-url" id="serverUrl">https://192.168.1.100:8443</span>
+          <svg class="copy-url-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+            <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
+          </svg>
+        </div>
+        <p class="pair-instruction">Scan this QR code with your iPhone camera</p>
+
+        <button class="btn btn-accent" id="downloadCaBtn">
+          <svg class="btn-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
+            <polyline points="7 10 12 15 17 10" />
+            <line x1="12" y1="15" x2="12" y2="3" />
+          </svg>
+          Download CA Certificate
+        </button>
+
+        <!-- Setup Instructions Accordion -->
+        <div class="accordion" id="setupAccordion">
+          <button class="accordion-trigger" id="setupToggle" aria-expanded="false">
+            <span>First-time setup instructions</span>
+            <svg class="accordion-chevron" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </button>
+          <div class="accordion-content" id="setupContent">
+            <div class="accordion-body">
+              <ol class="setup-steps">
+                <li>
+                  <strong>Download the CA Certificate</strong> by clicking the button above.
+                </li>
+                <li>
+                  <strong>Transfer it to your iPhone</strong> via AirDrop or email it to yourself.
+                </li>
+                <li>
+                  On your iPhone, go to <strong>Settings → General → VPN &amp; Device Management</strong> and install the profile.
+                </li>
+                <li>
+                  Then navigate to <strong>Settings → General → About → Certificate Trust Settings</strong> and enable full trust for the QuickClip CA.
+                </li>
+                <li>
+                  <strong>Scan the QR code</strong> above with your iPhone camera to connect.
+                </li>
+              </ol>
+              <p class="setup-note">You only need to do this once. After the certificate is trusted, your iPhone will connect automatically on the same network.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Clipboard Tab -->
+    <section class="tab-panel" id="panel-clipboard" role="tabpanel">
+      <div class="section-header">
+        <h2 class="section-title">Clipboard History</h2>
+        <button class="btn btn-ghost" id="clearHistoryBtn">
+          <svg class="btn-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6" />
+            <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6" />
+            <path d="M10 11v6M14 11v6" />
+          </svg>
+          Clear History
+        </button>
+      </div>
+
+      <div class="clipboard-list" id="clipboardList">
+        <!-- Items rendered by JS -->
+      </div>
+
+      <!-- Empty state -->
+      <div class="empty-state" id="clipboardEmpty">
+        <svg class="empty-icon" viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="var(--text-secondary)" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M16 4h2a2 2 0 012 2v14a2 2 0 01-2 2H6a2 2 0 01-2-2V6a2 2 0 012-2h2" />
+          <rect x="8" y="2" width="8" height="4" rx="1" />
+          <line x1="9" y1="12" x2="15" y2="12" opacity="0.4" />
+          <line x1="9" y1="16" x2="13" y2="16" opacity="0.3" />
+        </svg>
+        <p class="empty-title">No clipboard items yet</p>
+        <p class="empty-subtitle">Copy text or images — they'll appear here automatically</p>
+      </div>
+    </section>
+
+    <!-- Files Tab -->
+    <section class="tab-panel" id="panel-files" role="tabpanel">
+      <div class="section-header">
+        <h2 class="section-title">Shared &amp; Received Files</h2>
+        <div class="section-actions">
+          <label class="file-sort-control" for="fileSortSelect">
+            <span>Sort</span>
+            <select class="file-sort-select" id="fileSortSelect" aria-label="Sort files">
+              <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="name-asc">Name A–Z</option>
+              <option value="name-desc">Name Z–A</option>
+              <option value="size-desc">Largest first</option>
+              <option value="size-asc">Smallest first</option>
+            </select>
+          </label>
+          <button class="btn btn-accent btn-sm" id="sendFilesBtn">
+            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+            Share File with Mobile
+          </button>
+        </div>
+      </div>
+
+      <div class="files-list" id="filesList">
+        <!-- Items rendered by JS -->
+      </div>
+
+      <!-- Empty state -->
+      <div class="empty-state" id="filesEmpty">
+        <svg class="empty-icon" viewBox="0 0 24 24" width="56" height="56" fill="none" stroke="var(--text-secondary)" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" />
+          <polyline points="14 2 14 8 20 8" />
+          <line x1="9" y1="13" x2="15" y2="13" opacity="0.4" />
+          <line x1="9" y1="17" x2="13" y2="17" opacity="0.3" />
+        </svg>
+        <p class="empty-title">No files shared or received yet</p>
+        <p class="empty-subtitle">Click "Share File with Mobile" or send files from your iPhone</p>
+      </div>
+    </section>
+
+    <!-- Settings Tab -->
+    <section class="tab-panel" id="panel-settings" role="tabpanel">
+      <div class="section-header">
+        <h2 class="section-title">Preferences</h2>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-row">
+          <div class="settings-label">
+            <span class="settings-title">Sync Text Clipboard</span>
+            <span class="settings-desc">Automatically synchronize copied text between devices</span>
+          </div>
+          <label class="apple-switch">
+            <input type="checkbox" id="settingSyncText" checked />
+            <span class="switch-slider"></span>
+          </label>
+        </div>
+
+        <div class="settings-row">
+          <div class="settings-label">
+            <span class="settings-title">Sync Images</span>
+            <span class="settings-desc">Automatically synchronize copied images</span>
+          </div>
+          <label class="apple-switch">
+            <input type="checkbox" id="settingSyncImages" checked />
+            <span class="switch-slider"></span>
+          </label>
+        </div>
+
+        <div class="settings-row">
+          <div class="settings-label">
+            <span class="settings-title">Sync Files</span>
+            <span class="settings-desc">Allow new file transfers in both directions</span>
+          </div>
+          <label class="apple-switch">
+            <input type="checkbox" id="settingSyncFiles" checked />
+            <span class="switch-slider"></span>
+          </label>
+        </div>
+
+        <div class="settings-row">
+          <div class="settings-label">
+            <span class="settings-title">History Limit</span>
+            <span class="settings-desc">Maximum number of clipboard items to store</span>
+          </div>
+          <input type="number" class="settings-input" id="settingMaxHistory" min="1" max="200" value="50" />
+        </div>
+      </div>
+
+      <div class="section-header" style="margin-top: 24px;">
+        <h2 class="section-title">Security</h2>
+      </div>
+
+      <div class="settings-group">
+        <div class="settings-row">
+          <div class="settings-label">
+            <span class="settings-title">Pairing Token</span>
+            <span class="settings-desc">Secret authentication key required for device connection</span>
+          </div>
+          <div class="token-box">
+            <input type="password" class="token-input" id="settingToken" readonly value="••••••••••••" />
+          </div>
+          <button class="btn btn-ghost btn-sm" id="copyTokenBtn">Copy Token</button>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ====== Footer ====== -->
+  <footer class="app-footer">
+    <span class="footer-item" id="footerPort">Port: —</span>
+    <span class="footer-divider">·</span>
+    <span class="footer-item" id="footerIP">IP: —</span>
+  </footer>
+
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script src="renderer.js"></script>
+</body>
+</html>
