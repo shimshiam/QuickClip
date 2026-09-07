@@ -143,7 +143,7 @@ flowchart LR
 
 1. **Startup:** Electron migrates legacy data when needed, loads the pairing token and settings, chooses a local IPv4 address, creates or reuses TLS certificates, and starts Express and WebSocket on port `8443`. The service is also advertised over Bonjour/mDNS.
 2. **Pairing:** The desktop QR code contains the HTTPS address plus `ip`, `port`, and `token` values in the URL fragment. The phone saves these locally and removes the fragment from the address bar. The token is then used for authenticated API calls and the WebSocket handshake.
-3. **Windows to iPhone clipboard:** The Windows clipboard monitor polls for changes, records accepted text or images in session history, and broadcasts a WebSocket event. Text travels in the event; image history sends metadata and a thumbnail, while full-resolution image data is fetched only when the phone copies it.
+3. **Windows to iPhone clipboard:** The Windows clipboard monitor polls for changes, records accepted text or images in session history, and broadcasts a WebSocket event. Disabled image sync skips image reads. Eligible images are checked using pixel fingerprints, with PNG encoding only when pixels or dimensions change; oversized dimensions are rejected first. Text travels in the event; image history sends metadata and a thumbnail, while full-resolution image data is fetched only when the phone copies it.
 4. **iPhone to Windows clipboard:** A tap on **Send Clipboard** lets the browser read text or an image. The PWA sends a transfer ID and payload over WebSocket. Windows validates the active settings and size limits, writes the system clipboard, records the item, and returns a receipt. Unconfirmed clipboard transfers can be retried for five minutes without intentionally duplicating a receipt already accepted in the current Windows session.
 5. **Files:** Phone uploads use authenticated HTTPS and stream into managed temporary storage before being moved into `runtime/received`. Files chosen on Windows are copied into that directory. Connected devices receive a WebSocket availability event; downloads use file-scoped tickets that expire after 60 seconds.
 6. **Settings and pause:** Desktop settings update the shared policy and are broadcast to connected phones. Disabling a content type or pausing sync blocks new transfers without deleting existing history or files.
@@ -238,6 +238,8 @@ QuickClip stores runtime data in `app.getPath('userData')/runtime`, normally `%A
 
 When migrating from the older project-level `data/` directory, QuickClip copies and verifies the data before activating the new location. The original directory is retained as a recovery copy. Clipboard history is session-only; associated image files are removed as entries expire, history is cleared, or the app exits. Received files persist.
 
+At startup, QuickClip renews the server certificate if it expires within 30 days, has already expired, or the selected IP has changed. It keeps the existing CA certificate and key, so routine renewal does not require reinstalling the iPhone profile. Renewal checks run at startup; they do not restore trust if iOS has disabled the installed profile.
+
 ### Limits and delivery behavior
 
 - Text clipboard payload: up to 1 MiB of UTF-8 data.
@@ -248,6 +250,14 @@ When migrating from the older project-level `data/` directory, QuickClip copies 
 - Download tickets: scoped to one file or image and valid for 60 seconds.
 
 The text and image limits can be lowered with `maxTextBytes` and `maxImageBytes` in `runtime/config.json` while QuickClip is closed. Large images can be sent as ordinary files. If a phone upload is interrupted by backgrounding or the ten-minute upload timeout, check Windows before retrying because file uploads do not use clipboard-style receipt deduplication.
+
+### Network interface selection
+
+QuickClip prefers private LAN addresses on likely Ethernet or Wi-Fi adapters over known virtual adapters, VPNs, shared VPN address ranges, and link-local addresses. This is a heuristic; adapter names cannot prove which network your iPhone can reach.
+
+To override it, right-click the QuickClip tray icon and open **Network Interface**. Choose the adapter and address on the iPhone's network, or choose **Automatic** to clear the override. Finish transfers first: changing this setting saves the choice and restarts QuickClip, clearing session clipboard history. Re-scan the new QR code after the restart. The existing CA is retained.
+
+The saved choice follows that adapter's current address at startup, including DHCP changes. If the adapter is unavailable, QuickClip falls back to automatic selection and marks the saved choice as unavailable in the tray menu. Network changes during a running session still require restarting QuickClip.
 
 ## Troubleshooting
 

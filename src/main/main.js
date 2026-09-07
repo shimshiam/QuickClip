@@ -35,6 +35,7 @@ const {
 const { generateCertificates } = require('./certificates');
 const {
   getLocalIP,
+  getNetworkInterfaces,
   generateQRCode,
   generatePairingToken,
   startMDNS,
@@ -68,6 +69,9 @@ function loadConfig() {
       const raw = fs.readFileSync(CONFIG_PATH, 'utf-8');
       const loaded = JSON.parse(raw);
       loaded.settings = validateSettings(loaded.settings);
+      if (!loaded.networkInterface || typeof loaded.networkInterface.name !== 'string' || typeof loaded.networkInterface.address !== 'string') {
+        loaded.networkInterface = null;
+      }
       if (typeof loaded.token !== 'string' || !loaded.token) throw new Error('Missing pairing token');
       return loaded;
     }
@@ -99,6 +103,24 @@ function saveConfig(cfg) {
   } catch (err) {
     console.error('[Main] Failed to save config:', err.message);
     throw err;
+  }
+}
+
+function selectNetwork(preferred) {
+  try {
+    if (preferred && !getNetworkInterfaces().some((entry) => entry.name === preferred.name && entry.address === preferred.address)) {
+      throw new Error('This network address is no longer available. Open the tray menu again to refresh the list.');
+    }
+    if ((config.networkInterface?.name || null) === (preferred?.name || null)
+      && (config.networkInterface?.address || null) === (preferred?.address || null)) return;
+    const nextConfig = { ...config, networkInterface: preferred };
+    saveConfig(nextConfig);
+    config = nextConfig;
+    // The normal startup path updates TLS, allowed hosts, status, and the QR code together.
+    app.relaunch();
+    app.quit();
+  } catch (err) {
+    dialog.showErrorBox('Network interface could not be changed', err.message);
   }
 }
 
@@ -419,7 +441,7 @@ app.on('ready', async () => {
     config = loadConfig();
     syncPolicy = createPolicy(config.settings);
     configure({ dataDir: DATA_DIR, syncPolicy });
-    const localIP = getLocalIP();
+    const localIP = getLocalIP(config.networkInterface);
     const port = config.port || DEFAULT_PORT;
     serverInfo = { ip: localIP, port, token: config.token };
 
@@ -459,7 +481,10 @@ app.on('ready', async () => {
     setupEventForwarding();
 
     // 9. Create system tray
-    createTray(mainWindow, ICON_PATH);
+    createTray(mainWindow, ICON_PATH, {
+      getState: () => ({ candidates: getNetworkInterfaces(), preferred: config.networkInterface, activeIP: serverInfo.ip }),
+      select: selectNetwork,
+    });
 
     // 10. Advertise via mDNS
     startMDNS(port);

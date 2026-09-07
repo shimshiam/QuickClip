@@ -2,6 +2,7 @@
 
 const os = require('os');
 const crypto = require('crypto');
+const { isIPv4 } = require('net');
 
 // ── Module state ────────────────────────────────────────────────────────────────
 let bonjourInstance = null;
@@ -9,25 +10,46 @@ let publishedService = null;
 
 // ── getLocalIP ──────────────────────────────────────────────────────────────────
 /**
- * Returns the first non-internal IPv4 address found on any network interface.
- * Falls back to '127.0.0.1' when no suitable address is available.
- * @returns {string}
+ * Rank likely LAN addresses ahead of virtual/VPN and link-local adapters.
+ * Names are a heuristic, so every usable address remains available to select.
  */
-function getLocalIP() {
+function getNetworkInterfaces() {
   try {
-    const interfaces = os.networkInterfaces();
-    for (const name of Object.keys(interfaces)) {
-      for (const iface of interfaces[name]) {
-        // Skip internal (loopback) and non-IPv4 addresses
-        if (!iface.internal && iface.family === 'IPv4') {
-          return iface.address;
+    const candidates = [];
+    for (const [name, addresses] of Object.entries(os.networkInterfaces())) {
+      for (const iface of addresses || []) {
+        if (iface.internal || !['IPv4', 4].includes(iface.family) || !isIPv4(iface.address)) continue;
+        const [a, b] = iface.address.split('.').map(Number);
+        if (a === 0 || a === 127 || a >= 224) continue;
+        const privateIP = a === 10 || (a === 172 && b >= 16 && b <= 31) || (a === 192 && b === 168);
+        const virtual = /vethernet|hyper-v|wsl|docker|vmware|virtualbox|vbox|virtual|vpn|tailscale|zerotier|wireguard|openvpn|hamachi|tunnel|\btun\d*\b|\btap\b/i.test(name);
+        const physical = /wi-?fi|wireless|wlan|ethernet|^en\d|^eth\d/i.test(name);
+        let score = (privateIP ? 100 : 0) + (physical ? 20 : 0);
+        if (virtual) score -= 1000;
+        if (a === 100 && b >= 64 && b <= 127) score -= 1000;
+        if (a === 169 && b === 254) score -= 2000;
+        if (!candidates.some((entry) => entry.name === name && entry.address === iface.address)) {
+          candidates.push({ name, address: iface.address, score });
         }
       }
     }
+    // Stable ties avoid changing the pairing IP when OS enumeration order changes.
+    return candidates.sort((a, b) => b.score - a.score || a.name.localeCompare(b.name) || a.address.localeCompare(b.address));
   } catch (err) {
     console.error('[Network] Failed to enumerate network interfaces:', err.message);
+    return [];
   }
-  return '127.0.0.1';
+}
+
+function selectNetworkInterface(candidates, preferred) {
+  // Follow the selected adapter across DHCP changes; fall back if it disappears.
+  return candidates.find((entry) => entry.name === preferred?.name && entry.address === preferred?.address)
+    || candidates.find((entry) => entry.name === preferred?.name)
+    || candidates[0];
+}
+
+function getLocalIP(preferred) {
+  return selectNetworkInterface(getNetworkInterfaces(), preferred)?.address || '127.0.0.1';
 }
 
 // ── generateQRCode ──────────────────────────────────────────────────────────────
@@ -111,6 +133,8 @@ function stopMDNS() {
 // ── Exports ─────────────────────────────────────────────────────────────────────
 module.exports = {
   getLocalIP,
+  getNetworkInterfaces,
+  selectNetworkInterface,
   generateQRCode,
   generatePairingToken,
   startMDNS,

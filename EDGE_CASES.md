@@ -9,6 +9,7 @@ Each section details potential failure modes and actionable mitigation strategie
 ## 1. Network Discovery & Interface Management (`network.js`)
 
 ### 1.1. Virtual Network Adapter Trapping
+* **Status: Fixed.** Automatic selection ranks likely LAN interfaces ahead of known virtual/VPN adapters and link-local addresses, with deterministic tie-breaking. The tray's **Network Interface** submenu provides a persisted manual override and an **Automatic** option. Changing the choice restarts QuickClip so certificates, accepted hosts, and pairing details agree. An unavailable preferred adapter falls back to automatic selection. See README.md for usage and limitations. The description below records the original failure.
 * **Location:** [`src/main/network.js:L16-L31`](file:///d:/VSCode/QuickClip/src/main/network.js#L16-L31) (`getLocalIP`)
 * **The Edge Case:**
   Currently, `getLocalIP()` iterates through `os.networkInterfaces()` and returns the **first** non-internal IPv4 address it encounters (`if (!iface.internal && iface.family === 'IPv4') return iface.address;`).
@@ -62,6 +63,7 @@ Each section details potential failure modes and actionable mitigation strategie
 ---
 
 ### 2.2. Large Image Memory Spikes & Payload Stalls
+* **Status: Fixed for bounded image processing and transfer.** Disabled image sync skips clipboard image reads. Polling and startup check dimensions before accessing pixels, and only changed, eligible images are encoded as PNG. Pixel fingerprints use native bitmap memory without copying it. Existing disk-backed images, metadata notifications, and authenticated image downloads keep full images out of WebSocket messages. Polling still reads and hashes eligible images every 500 ms; it is not event-driven. The description below records the original failure.
 * **Location:** [`src/main/clipboard-monitor.js:L35-L52`](file:///d:/VSCode/QuickClip/src/main/clipboard-monitor.js#L35-L52) & `broadcastClipboard` in [`src/main/server.js:L155`](file:///d:/VSCode/QuickClip/src/main/server.js#L155)
 * **The Edge Case:**
   If a Windows user takes a full-screen multi-monitor screenshot or copies an uncompressed 4K/8K bitmap image (`40+ MB raw memory`), `clipboard-monitor.js` converts the entire image into a base64 PNG payload.
@@ -108,6 +110,7 @@ Each section details potential failure modes and actionable mitigation strategie
 ## 4. Certificate Authority & Trust Management (`certificates.js`)
 
 ### 4.1. iOS Certificate Trust Revocation & Expiration
+* **Status: Server certificate renewal fixed.** Startup renews certificates at or within 30 days of expiration, including already expired certificates, even if the IP is unchanged. Missing or unreadable certificate contents and missing server keys are also regenerated using the existing CA. Healthy certificates are reused. iOS resetting certificate trust remains a manual device setting; renewal does not restore revoked trust. The description below records the original failure.
 * **Location:** [`src/main/certificates.js:L43`](file:///d:/VSCode/QuickClip/src/main/certificates.js#L43) (`validity: 3650`) & `serverCert` (`validity: 365`)
 * **The Edge Case:**
   While the generated root CA (`ca.crt`) is valid for ~10 years, the per-IP server certificate (`server.crt`) is valid for `365 days`. When the server certificate expires—or if an iOS major version update resets user profiles under **Settings → General → About → Certificate Trust Settings**—Safari will block `wss://` WebSocket connections and show a *“This Connection is Not Private”* warning.

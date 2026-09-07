@@ -15,6 +15,22 @@ let lastText = '';
 let lastImage = '';
 const callbacks = [];
 const hash = (value) => crypto.createHash('sha256').update(value).digest('hex');
+const MAX_IMAGE_PIXELS = 40000000;
+
+function imageFingerprint(img) {
+  const { width, height } = img.getSize();
+  // getBitmap borrows native memory. Hash it synchronously and never retain the buffer.
+  return `${width}x${height}:${hash(img.getBitmap())}`;
+}
+
+function readImageState() {
+  if (!policy.allows('image')) return { fingerprint: null };
+  const img = clipboard.readImage();
+  if (!img || img.isEmpty()) return { fingerprint: '' };
+  const { width, height } = img.getSize();
+  if (!width || !height || width * height > MAX_IMAGE_PIXELS) return { fingerprint: 'oversized' };
+  return { img, fingerprint: imageFingerprint(img) };
+}
 
 function configure({ dataDir, syncPolicy }) {
   policy = syncPolicy;
@@ -63,11 +79,11 @@ function record(type, value, source, img) {
 function validateImage(buffer) {
   if (!Buffer.isBuffer(buffer) || buffer.length > policy.get().maxImageBytes) throw new Error('Image exceeds the clipboard size limit');
   const dimensions = imageSize(buffer);
-  if (!dimensions.width || !dimensions.height || dimensions.width * dimensions.height > 40000000) throw new Error('Image dimensions exceed 40 megapixels');
+  if (!dimensions.width || !dimensions.height || dimensions.width * dimensions.height > MAX_IMAGE_PIXELS) throw new Error('Image dimensions exceed 40 megapixels');
   const img = nativeImage.createFromBuffer(buffer);
   if (img.isEmpty()) throw new Error('The received image could not be decoded');
   const { width, height } = img.getSize();
-  if (width * height > 40000000) throw new Error('Image dimensions exceed 40 megapixels');
+  if (width * height > MAX_IMAGE_PIXELS) throw new Error('Image dimensions exceed 40 megapixels');
   const png = img.toPNG();
   if (png.length > policy.get().maxImageBytes) throw new Error('Decoded image exceeds the clipboard size limit');
   return { img, png };
@@ -81,13 +97,13 @@ function poll() {
       lastText = textHash;
       if (text && policy.allows('text') && Buffer.byteLength(text) <= policy.get().maxTextBytes) notify(record('text', text, 'local'));
     }
-    const img = clipboard.readImage();
-    if (!img || img.isEmpty()) { lastImage = ''; return; }
+    const { img, fingerprint } = readImageState();
+    const previous = lastImage;
+    lastImage = fingerprint;
+    // Re-enabling sync seeds the current image without sending copies made while disabled.
+    if (!img || previous === null || fingerprint === previous) return;
     const png = img.toPNG();
-    const imageHash = hash(png);
-    if (imageHash === lastImage) return;
-    lastImage = imageHash;
-    if (policy.allows('image') && png.length <= policy.get().maxImageBytes && img.getSize().width * img.getSize().height <= 40000000) {
+    if (png.length <= policy.get().maxImageBytes) {
       notify(record('image', png, 'local', img));
     }
   } catch (err) { console.error('[Clipboard] Poll failed:', err.message); }
@@ -96,8 +112,7 @@ function poll() {
 function seed() {
   const text = clipboard.readText();
   lastText = text ? hash(text) : '';
-  const img = clipboard.readImage();
-  lastImage = img && !img.isEmpty() ? hash(img.toPNG()) : '';
+  lastImage = readImageState().fingerprint;
 }
 
 function startMonitoring() { if (!timer) { seed(); timer = setInterval(poll, 500); } }
@@ -117,7 +132,7 @@ function writeToClipboard(item, source = 'remote') {
       img = decoded.img; value = decoded.png;
       clipboard.writeImage(img);
       const actual = clipboard.readImage();
-      if (actual.isEmpty() || hash(actual.toBitmap()) !== hash(img.toBitmap())) throw new Error('Windows did not retain the clipboard image');
+      if (actual.isEmpty() || imageFingerprint(actual) !== imageFingerprint(img)) throw new Error('Windows did not retain the clipboard image');
     } else throw new Error('Unsupported clipboard type');
     // Track both formats instead of suppressing every change for one second.
     seed();

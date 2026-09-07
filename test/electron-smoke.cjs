@@ -22,7 +22,10 @@ const isolatedElectron = { nativeImage, shell: {}, clipboard: {
   writeText: (value) => { text = value; image = nativeImage.createEmpty(); },
   writeImage: (value) => { image = value; text = ''; },
 } };
-const monitor = load('src/main/clipboard-monitor.js', { electron: isolatedElectron });
+let pollClipboard;
+const monitor = load('src/main/clipboard-monitor.js', { electron: isolatedElectron }, {
+  setInterval: (callback) => { pollClipboard = callback; return 1; }, clearInterval() {},
+});
 const policy = createPolicy();
 const fileManager = load('src/main/file-manager.js', { electron: isolatedElectron }).createFileManager(root);
 
@@ -36,6 +39,14 @@ async function eventually(window, expression) {
 
 app.whenReady().then(async () => {
   monitor.configure({ dataDir: root, syncPolicy: policy });
+  monitor.startMonitoring();
+  image = nativeImage.createFromBitmap(Buffer.alloc(400 * 300 * 4, 200), { width: 400, height: 300 });
+  pollClipboard(); pollClipboard();
+  assert.equal(monitor.getHistory().length, 1);
+  image = nativeImage.createFromBitmap(Buffer.alloc(400 * 300 * 4, 100), { width: 400, height: 300 });
+  pollClipboard();
+  assert.equal(monitor.getHistory().length, 2);
+  monitor.clearHistory(); image = nativeImage.createEmpty(); pollClipboard();
   const cert = await generateCertificates(root, '127.0.0.1');
   server = api.createServer(cert, { port: 0, dataDir: root, token: 'smoke-token', fileManager,
     policy, getHistoryFn: monitor.getHistory, getImagePathFn: monitor.getImagePath, writeToClipboardFn: monitor.writeToClipboard });
@@ -114,7 +125,7 @@ app.whenReady().then(async () => {
   fs.writeFileSync(path.join(out, 'phone.png'), (await phone.webContents.capturePage()).toPNG());
   fs.writeFileSync(path.join(out, 'desktop.png'), (await desktop.webContents.capturePage()).toPNG());
   assert.deepEqual(errors, []);
-  console.log('PASS: real native PNG decoding, phone text/image acknowledgements, full-resolution Copy, pause/resume, reload hydration, desktop preload and Copy.');
+  console.log('PASS: native pixel change detection and PNG decoding, phone text/image acknowledgements, full-resolution Copy, pause/resume, reload hydration, desktop preload and Copy.');
 }).then(() => finish(0), (err) => { console.error(err); finish(1); });
 
 function finish(code) {

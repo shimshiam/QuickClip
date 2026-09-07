@@ -6,6 +6,7 @@ const { Tray, Menu, nativeImage, app } = require('electron');
 let tray = null;
 let isPaused = false;
 let pauseToggleCallbacks = [];
+let networkControls = null;
 
 // ── createTray ──────────────────────────────────────────────────────────────────
 /**
@@ -15,7 +16,8 @@ let pauseToggleCallbacks = [];
  * @param {string} iconPath – Path to the tray icon image (e.g. assets/tray-icon.jpg)
  * @returns {Electron.Tray}
  */
-function createTray(mainWindow, iconPath) {
+function createTray(mainWindow, iconPath, network = null) {
+  networkControls = network;
   try {
     let icon;
     try {
@@ -43,6 +45,8 @@ function createTray(mainWindow, iconPath) {
 
     // Build context menu
     _rebuildMenu(mainWindow);
+    // Refresh addresses each time the native menu opens.
+    tray.on('right-click', () => _rebuildMenu(mainWindow));
 
     // Click on tray → toggle main window visibility
     tray.on('click', () => {
@@ -89,6 +93,7 @@ function _rebuildMenu(mainWindow) {
       },
     },
     { type: 'separator' },
+    ...(networkControls ? [{ label: 'Network Interface', submenu: networkMenu() }, { type: 'separator' }] : []),
     {
       label: 'Quit',
       click: () => {
@@ -98,6 +103,23 @@ function _rebuildMenu(mainWindow) {
   ]);
 
   tray.setContextMenu(contextMenu);
+}
+
+function networkMenu() {
+  const { candidates, preferred, activeIP } = networkControls.getState();
+  const selected = candidates.find((entry) => entry.name === preferred?.name && entry.address === preferred?.address)
+    || candidates.find((entry) => entry.name === preferred?.name);
+  return [
+    { label: `Current address: ${activeIP}`, enabled: false },
+    { label: 'Changing restarts QuickClip; finish transfers first', enabled: false },
+    { type: 'separator' },
+    { label: 'Automatic', type: 'radio', checked: !preferred, click: () => networkControls.select(null) },
+    ...candidates.map((entry) => ({
+      label: `${entry.name.replace(/&/g, '&&')} (${entry.address})`, type: 'radio', checked: entry === selected,
+      click: () => networkControls.select({ name: entry.name, address: entry.address }),
+    })),
+    ...(preferred && !selected ? [{ label: `${preferred.name.replace(/&/g, '&&')} (unavailable; using automatic)`, type: 'radio', checked: true, enabled: false }] : []),
+  ];
 }
 
 // ── updateTooltip ───────────────────────────────────────────────────────────────

@@ -2,13 +2,28 @@
 
 const fs = require('fs');
 const path = require('path');
+const { X509Certificate } = require('crypto');
+const RENEW_BEFORE_MS = 30 * 24 * 60 * 60 * 1000;
+
+function needsRenewal(cert) {
+  try {
+    const parsed = new X509Certificate(cert);
+    const expires = Date.parse(parsed.validTo);
+    const starts = Date.parse(parsed.validFrom);
+    const now = Date.now();
+    return !Number.isFinite(expires) || !Number.isFinite(starts)
+      || starts > now || expires <= now + RENEW_BEFORE_MS;
+  } catch (_) {
+    return true;
+  }
+}
 
 /**
  * QuickClip – Local CA + Server Certificate Generation
  *
  * Uses the `mkcert` npm package to create a local Certificate Authority and
  * per-IP server certificates.  Certs are persisted to `<dataDir>/certs/` and
- * only regenerated when the machine's LAN IP changes.
+ * renewed at startup when the LAN IP changes or expiry is within 30 days.
  */
 
 // ── generateCertificates ────────────────────────────────────────────────────────
@@ -70,13 +85,13 @@ async function generateCertificates(dataDir, localIP) {
     // ── Subsequent runs ───────────────────────────────────────────────────────
     const caCert  = fs.readFileSync(caPath, 'utf-8');
     const caKey   = fs.readFileSync(caKeyPath, 'utf-8');
-    let   cert    = fs.readFileSync(certPath, 'utf-8');
-    let   key     = fs.readFileSync(keyPath, 'utf-8');
+    let   cert    = fs.existsSync(certPath) ? fs.readFileSync(certPath, 'utf-8') : '';
+    let   key     = fs.existsSync(keyPath) ? fs.readFileSync(keyPath, 'utf-8') : '';
     const lastIP  = fs.existsSync(ipPath) ? fs.readFileSync(ipPath, 'utf-8').trim() : '';
 
-    // IP changed → regenerate server cert only
-    if (lastIP !== localIP) {
-      console.log(`[Certs] IP changed (${lastIP} → ${localIP}), regenerating server certificate…`);
+    // Keep the trusted CA; replace only the server certificate and its key.
+    if (lastIP !== localIP || !key || needsRenewal(cert)) {
+      console.log(`[Certs] Renewing server certificate for ${localIP} (address changed, certificate due, or files missing/invalid)…`);
 
       const serverCert = await createCert({
         ca: { key: caKey, cert: caCert },
