@@ -1,7 +1,7 @@
 # QuickClip
 
 <div align="center">
-  <img src="./assets/icon.jpg" alt="QuickClip icon" width="112">
+  <img src="./assets/appIcon.png" alt="QuickClip icon" width="112">
 
   **Private, local-network clipboard and file sharing between Windows and iPhone.**
 

@@ -152,7 +152,7 @@ function createMainWindow() {
     transparent: false,
     show: false,
     title: 'QuickClip',
-    icon: path.join(__dirname, '..', '..', 'assets', 'icon.jpg'),
+    icon: path.join(__dirname, '..', '..', 'assets', 'appIcon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
