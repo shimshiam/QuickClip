@@ -1,221 +1,300 @@
 # QuickClip
 
 <div align="center">
+  <img src="./assets/icon.png" alt="QuickClip icon" width="112">
 
-![QuickClip Banner](./assets/demo-banner.png)
+  **Private, local-network clipboard and file sharing between Windows and iPhone.**
 
-**Instantaneous, secure local-network clipboard & file sharing between Windows PCs and iPhone.**
-
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
-[![Platform: Windows & iOS](https://img.shields.io/badge/Platform-Windows%20%7C%20iOS-4F46E5.svg)]()
-[![Built With: Electron & Express](https://img.shields.io/badge/Built%20With-Electron%20%7C%20Node.js%20%7C%20WebSockets-06B6D4.svg)]()
-
+  [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+  ![Platform: Windows and iOS](https://img.shields.io/badge/Platform-Windows%20%7C%20iOS-4F46E5.svg)
+  ![Built with Electron, Node.js, and WebSockets](https://img.shields.io/badge/Built%20with-Electron%20%7C%20Node.js%20%7C%20WebSockets-06B6D4.svg)
 </div>
 
----
-
-## 📖 Overview
-
-**QuickClip** bridges the gap between Windows desktops and Apple iOS devices. While Mac users enjoy Apple's native Continuity and Handoff features, Windows users have historically lacked a seamless, native-feeling way to instantly copy text, share clipboard images, or transfer files across devices without resorting to cloud storage apps, emailing themselves, or messaging self-chats.
-
-QuickClip solves this by running a secure **HTTPS + WebSocket server** directly inside an **Electron desktop app** on your Windows PC. Your iPhone connects locally over your home or office Wi-Fi via an optimized **Progressive Web App (PWA)**—enabling instantaneous, encrypted bidirectional syncing with zero cloud dependencies.
-
----
-
-## 🌟 Why QuickClip is Beneficial
+QuickClip runs an HTTPS and WebSocket server inside an Electron app on your Windows PC. An iPhone on the same local network connects through the QuickClip web app, allowing text, images, and files to move in either direction without a cloud relay.
 
 > [!IMPORTANT]
-> **Zero Cloud Dependency & Complete Privacy**  
-> Every single byte of text, image data, and file transfer stays 100% within your Local Area Network (LAN). No data ever touches third-party servers, cloud storage providers, or external databases.
+> Transfers stay on the local network, but every device on that network should still be treated as untrusted. Keep the pairing link and token private, and only install the QuickClip certificate you generated on your own PC.
 
-* 🚀 **Instantaneous Apple-to-Windows Handoff:** Copy text or images on your Windows PC and watch them immediately appear on your iPhone screen, and vice versa—powered by real-time WebSockets with zero polling delays.
-* 🔒 **End-to-End Local HTTPS Encryption:** By automatically generating a local Certificate Authority (CA) using `mkcert`, QuickClip ensures that your local web traffic (`https://your-ip:8443`) is fully encrypted and trusted by iOS without annoying browser security warnings.
-* 📲 **Native PWA Experience:** QuickClip installs directly to your iPhone Home Screen as a standalone Progressive Web App with custom icons, full-screen viewport support, and fast native-like responsiveness.
-* ⚡ **Zero-Configuration Pairing:** Simply scan the QR code displayed on your Windows app with your iPhone camera. QuickClip handles authentication using cryptographic pairing tokens and discovers services automatically via **Bonjour / mDNS**.
-* 📁 **High-Speed Local File Transfers:** Transfer photos, videos, documents, and archives up to **500 MB** directly across Wi-Fi at local network gigabit speeds—bypassing internet bandwidth limits entirely.
-* 🖥️ **Unobtrusive System Tray Integration:** Runs quietly in the background on Windows with smart clipboard monitoring, thumbnail previews, echo guards, and one-click tray controls.
+## What it does
 
----
+- Synchronizes copied text and clipboard images between Windows and iPhone.
+- Transfers photos, videos, documents, and archives up to 500 MB over local Wi-Fi.
+- Keeps a session-only clipboard history and a persistent shared-file list.
+- Encrypts traffic in transit with a locally generated CA and server certificate.
+- Authenticates the phone with a random pairing token embedded in the QR link fragment.
+- Runs in the Windows system tray and lets you pause text, image, or file synchronization.
+- Supports light and dark interfaces on both devices.
 
-## 📸 Demo & Screenshots
+## Demo
+
+### Pair from Windows
+
+<p align="center">
+  <img src="./assets/readme/windows-pairing-dark-redacted.png" alt="QuickClip desktop Pair tab showing a redacted QR code and one-time certificate instructions" width="520">
+</p>
+<p align="center"><sub>The Windows Pair tab shows the local server address, QR code, certificate download, and the one-time iPhone trust steps.</sub></p>
+
+Scan the QR code after installing and trusting the certificate. The phone stores the PC address and pairing token locally, then removes the credentials from the visible URL.
+
+### Clipboard in both directions
+
+<table>
+  <tr>
+    <td width="50%">
+      <video src="./assets/readme/windows-to-iphone-clipboard.mp4" controls playsinline width="100%"></video>
+      <p><sub>Windows to iPhone: copying the selected Notepad text adds it to QuickClip's clipboard history so it is available on the connected phone.</sub></p>
+      <p><a href="./assets/readme/windows-to-iphone-clipboard.mp4">Open the Windows-to-iPhone recording</a></p>
+    </td>
+    <td width="50%">
+      <video src="./assets/readme/iphone-to-windows-clipboard.mov" controls playsinline width="100%"></video>
+      <p><sub>iPhone to Windows: QuickClip reads the clipboard after the user approves the paste action, sends it to Windows, and waits for delivery confirmation.</sub></p>
+      <p><a href="./assets/readme/iphone-to-windows-clipboard.mov">Open the iPhone-to-Windows recording</a></p>
+    </td>
+  </tr>
+</table>
 
 > [!NOTE]
-> *The images below are placeholders for demo screenshots and GIFs illustrating QuickClip in action.*
+> GitHub may show the recordings as links instead of inline players. The linked files are the same demos stored in this repository.
 
-### 1. Windows Desktop Pairing & QR Code
-Scan the dynamic QR code on your PC to instantly authenticate and link your iPhone.
+<p align="center">
+  <img src="./assets/readme/iphone-clipboard.jpg" alt="QuickClip on iPhone showing Connected status and a text clipboard-history item" width="360">
+</p>
+<p align="center"><sub>The connected iPhone view provides an explicit Send Clipboard action and a Copy button for items received from Windows.</sub></p>
 
-![Windows Desktop Pairing & QR Code](./assets/demo-pairing.png)
+<p align="center">
+  <img src="./assets/readme/windows-clipboard-history.png" alt="QuickClip desktop clipboard history containing text received from an iPhone" width="720">
+</p>
+<p align="center"><sub>On Windows, received text is recorded in the current session's clipboard history and marked with its source device.</sub></p>
 
-### 2. Real-Time Clipboard Sync
-Text and images copied on Windows immediately appear in your iPhone's QuickClip PWA feed ready to be copied or shared.
+Browser clipboard access requires a user action on iOS, so the phone cannot silently monitor or replace the system clipboard in the background. Tap **Send Clipboard** or **Copy** when moving content through the phone.
 
-![Real-Time Clipboard Sync](./assets/demo-clipboard-sync.png)
+### Transfer files
 
-### 3. Bidirectional High-Speed File Transfer
-Send files from your iPhone to QuickClip's per-user `runtime/received` folder, or download files shared from your PC.
+<p align="center">
+  <img src="./assets/readme/iphone-files.jpg" alt="QuickClip Files tab on iPhone with the file picker and shared-file list" width="360">
+</p>
+<p align="center"><sub>The iPhone Files tab can choose an item from Photos, the camera, Files, or another provider and send it directly to the Windows PC.</sub></p>
 
-![Bidirectional File Transfer](./assets/demo-file-transfer.png)
+Files uploaded from the phone are stored under QuickClip's per-user `runtime/received` directory. Files selected on Windows are copied into the same managed directory and announced to connected phones, where **Save** requests a short-lived download link.
 
----
+### Configure synchronization
 
-## 🏗️ Architecture & How It Works
+<p align="center">
+  <img src="./assets/readme/windows-settings.png" alt="QuickClip desktop settings for clipboard text, images, files, history limit, and pairing token" width="620">
+</p>
+<p align="center"><sub>The Windows Settings tab controls which transfer types are accepted, the clipboard-history limit, and access to the pairing token.</sub></p>
+
+<details>
+<summary><strong>Light and dark pairing views</strong></summary>
+
+<table>
+  <tr>
+    <td width="50%"><img src="./assets/readme/windows-pairing-light-redacted.png" alt="QuickClip Pair tab in light mode with its QR code redacted"></td>
+    <td width="50%"><img src="./assets/readme/windows-pairing-dark-redacted.png" alt="QuickClip Pair tab in dark mode with its QR code redacted"></td>
+  </tr>
+  <tr>
+    <td><sub>Light mode keeps the pairing controls and setup checklist visible against a bright desktop theme.</sub></td>
+    <td><sub>Dark mode presents the same QR code, server address, and certificate workflow.</sub></td>
+  </tr>
+</table>
+
+</details>
+
+## Architecture & How It Works
 
 ```mermaid
-graph TD
-    subgraph Windows PC ["Windows PC (Electron App)"]
-        CM[Clipboard Monitor] <--> IPC[Electron IPC / State]
-        FM[File Storage Manager] <--> IPC
-        IPC <--> WS[WebSocket Server :8443]
-        IPC <--> HTTPS[Express HTTPS Server :8443]
-        CA[mkcert Local CA] --> HTTPS
-        MDNS[Bonjour mDNS Service]
+flowchart LR
+    subgraph Windows[Windows PC - Electron main process]
+        Desktop[Desktop renderer]
+        IPC[Preload and IPC boundary]
+        Monitor[Clipboard monitor]
+        Policy[Settings and pause policy]
+        Files[File manager]
+        Runtime[(Per-user runtime storage)]
+        Server[HTTPS and WebSocket server<br/>port 8443]
+        TLS[Local CA and server certificate]
+        MDNS[Bonjour / mDNS advertisement]
     end
 
-    subgraph iPhone ["iPhone (iOS PWA / Safari)"]
-        QR[Camera / QR Code Scanner]
-        PWA[QuickClip PWA UI]
-        PWA <-->|WSS Real-Time Events| WS
-        PWA <-->|HTTPS REST & Files| HTTPS
-    </main>
+    subgraph Phone[iPhone - browser or installed web app]
+        PWA[QuickClip PWA]
+        PhoneClipboard[Clipboard permission prompt]
+        PhoneFiles[Photos, camera, and Files picker]
+    end
 
-    QR -->|Reads Server URL + Token| MDNS
-    QR -->|Initial Pairing| HTTPS
+    Desktop <--> IPC
+    IPC <--> Monitor
+    IPC <--> Files
+    IPC <--> Policy
+    Monitor <--> Server
+    Files <--> Server
+    Policy --> Server
+    Monitor --> Runtime
+    Files --> Runtime
+    TLS --> Server
+    Server --> MDNS
+
+    PWA <-->|WSS events, transfer receipts, and settings| Server
+    PWA <-->|HTTPS history, uploads, and downloads| Server
+    Desktop -. QR pairing link .-> PWA
+    PhoneClipboard <--> PWA
+    PhoneFiles <--> PWA
 ```
 
----
+1. **Startup:** Electron migrates legacy data when needed, loads the pairing token and settings, chooses a local IPv4 address, creates or reuses TLS certificates, and starts Express and WebSocket on port `8443`. The service is also advertised over Bonjour/mDNS.
+2. **Pairing:** The desktop QR code contains the HTTPS address plus `ip`, `port`, and `token` values in the URL fragment. The phone saves these locally and removes the fragment from the address bar. The token is then used for authenticated API calls and the WebSocket handshake.
+3. **Windows to iPhone clipboard:** The Windows clipboard monitor polls for changes, records accepted text or images in session history, and broadcasts a WebSocket event. Text travels in the event; image history sends metadata and a thumbnail, while full-resolution image data is fetched only when the phone copies it.
+4. **iPhone to Windows clipboard:** A tap on **Send Clipboard** lets the browser read text or an image. The PWA sends a transfer ID and payload over WebSocket. Windows validates the active settings and size limits, writes the system clipboard, records the item, and returns a receipt. Unconfirmed clipboard transfers can be retried for five minutes without intentionally duplicating a receipt already accepted in the current Windows session.
+5. **Files:** Phone uploads use authenticated HTTPS and stream into managed temporary storage before being moved into `runtime/received`. Files chosen on Windows are copied into that directory. Connected devices receive a WebSocket availability event; downloads use file-scoped tickets that expire after 60 seconds.
+6. **Settings and pause:** Desktop settings update the shared policy and are broadcast to connected phones. Disabling a content type or pausing sync blocks new transfers without deleting existing history or files.
 
-## 🛠️ Prerequisites
+QuickClip uses TLS between the phone and PC and does not require a cloud service. It is not an internet-facing service and should remain behind a trusted local network and firewall.
 
-Before installing QuickClip, ensure your system meets the following requirements:
+## Requirements
 
-* **Operating System:** Windows 10 or Windows 11 (64-bit)
-* **Node.js:** v18.x or newer ([Download Node.js](https://nodejs.org/))
-* **Git:** Installed on your PC
-* **Network:** Windows PC and iPhone connected to the **same Wi-Fi / Local Network** (with client isolation/AP isolation disabled on your router).
+- Windows 10 or Windows 11, 64-bit
+- Node.js 18 or newer
+- Git, if cloning instead of downloading the repository as an archive
+- A Windows PC and iPhone on the same Wi-Fi network
+- A network that allows devices to communicate with each other; guest networks and AP/client isolation usually block QuickClip
 
----
+## Install and run
 
-## 📥 Installation Guide
-
-### Step 1: Clone the Repository & Install Dependencies
-
-Open PowerShell or your preferred terminal on Windows and run:
-
-```bash
-# Clone the QuickClip repository
-git clone https://github.com/yourusername/QuickClip.git
+```powershell
+git clone https://github.com/shimshiam/QuickClip.git
 cd QuickClip
-
-# Install Node dependencies
 npm install
-```
-
-### Step 2: Launch QuickClip on Windows
-
-Start the desktop application:
-
-```bash
-# Start in standard production mode
 npm start
-
-# OR run in development mode (includes dev tooling)
-npm run dev
 ```
 
-On first launch, QuickClip will automatically:
-1. Migrate existing project data into the per-user application-data folder, preserving pairing and certificates. Generate certificates in `runtime/certs/` on first use.
-2. Start the HTTPS and WebSocket server on port `8443`.
-3. Broadcast the QuickClip service across your network via Bonjour (`.local`).
-4. Display the main dashboard with your unique QR code.
+For development, use `npm run dev`. This opens Electron's developer tools with the desktop app.
 
----
+On first launch QuickClip:
 
-## 📱 iPhone Setup & One-Time Pairing
+1. Creates `%APPDATA%/quickclip/runtime` and a random pairing token.
+2. Generates a local CA and an IP-specific server certificate under `runtime/certs`.
+3. Starts the HTTPS and WebSocket server on port `8443`.
+4. Starts clipboard monitoring and advertises the local HTTPS service with Bonjour/mDNS.
+5. Opens the desktop dashboard and displays the pairing QR code.
 
-To allow your iPhone to trust the local HTTPS connection and enjoy seamless syncing, complete this simple **one-time** setup:
+## One-time iPhone setup
 
-### 1. Download & Install the Local CA Certificate
-1. Make sure your iPhone and PC are on the same Wi-Fi network.
-2. On your Windows QuickClip window, click the **Download CA Certificate** button, or navigate directly to `https://<your-pc-ip>:8443/ca.crt` in Safari on your iPhone.
-3. When prompted by Safari, tap **Allow** to download the configuration profile.
+### 1. Move the CA certificate to the iPhone
 
-### 2. Trust the Certificate in iOS Settings
-1. Open your iPhone **Settings** app. You will see a prompt saying **Profile Downloaded** at the top—tap it (or navigate to **General → VPN & Device Management** → select **QuickClip CA**).
-2. Tap **Install** in the top-right corner, enter your passcode, and confirm installation.
-3. Next, navigate to **Settings → General → About → Certificate Trust Settings**.
-4. Under **Enable Full Trust for Root Certificates**, toggle the switch next to **QuickClip CA** to **ON** and confirm.
+On the Windows **Pair** tab, select **Download CA Certificate**. Transfer `QuickClip-CA.crt` to your iPhone, then open it from the Files app.
+
+<p align="center">
+  <img src="./assets/readme/iphone-ca-file.jpg" alt="QuickClip CA certificate saved in the iPhone Files app" width="520">
+</p>
+<p align="center"><sub>The QuickClip CA file is ready to be opened on the iPhone so iOS can download its configuration profile.</sub></p>
+
+### 2. Install the configuration profile
+
+Open **Settings > General > VPN & Device Management**, select **QuickClip**, and install the profile.
+
+<p align="center">
+  <img src="./assets/readme/iphone-profile.png" alt="iPhone VPN and Device Management screen showing the QuickClip configuration profile" width="430">
+</p>
+<p align="center"><sub>After the certificate file is opened, the QuickClip entry appears under Configuration Profile in VPN & Device Management.</sub></p>
+
+### 3. Enable full trust
+
+Open **Settings > General > About > Certificate Trust Settings**. Under **Enable Full Trust for Root Certificates**, turn on **QuickClip** and confirm.
+
+<p align="center">
+  <img src="./assets/readme/iphone-certificate-trust.png" alt="iPhone Certificate Trust Settings with full trust enabled for QuickClip" width="430">
+</p>
+<p align="center"><sub>Full trust allows iOS to validate QuickClip's local HTTPS page and secure WebSocket connection.</sub></p>
+
+### 4. Scan and connect
+
+Return to the Windows **Pair** tab and scan its QR code with the iPhone camera. Open the link and wait for **Connected**. In Safari, use **Share > Add to Home Screen** if you want QuickClip to launch like an app.
 
 > [!TIP]
-> **Why is this necessary?**  
-> Apple requires explicit user trust for self-signed certificates. Enabling this allows Safari and the PWA to connect over secure HTTPS and WebSockets (`wss://`) without showing security errors. You only need to perform this step **once per device**.
-
-### 3. Pair & Add to Home Screen
-1. Open your iPhone Camera app and **scan the QR code** shown on your Windows desktop screen.
-2. Tap the notification to open QuickClip in Safari. You will instantly connect!
-3. To install as a native app: tap the **Share button** (square with an up arrow) in Safari and select **Add to Home Screen**.
-4. Launch **QuickClip** directly from your Home Screen anytime you want to share clipboard contents or files!
-
----
-
-## ⚙️ Configuration & Data Storage
-
-QuickClip stores runtime data in `app.getPath('userData')/runtime`, normally `%APPDATA%/quickclip/runtime` on Windows:
-
-| Directory / File | Description |
-| :--- | :--- |
-| `runtime/config.json` | Pairing token and validated preferences. |
-| `runtime/certs/` | Existing CA, server certificates, and private keys. |
-| `runtime/received/` | Files shared in either direction. |
-| `runtime/received/index.json` | Metadata and local paths for shared files. |
-| `runtime/clipboard-images/` | Full-resolution images for the current clipboard-history session. |
-
-On the first launch after updating, QuickClip copies and verifies the old project `data/` folder, rewrites indexed file paths, and only then activates the new location. The original folder is retained as a recovery copy. Failed migrations stop startup with an error instead of replacing the original configuration. Index entries whose files were already missing are retained as unavailable and listed in `runtime/migration.json`; they do not block migration of intact files. Successful migrations do not rotate the pairing token or CA; no certificate reinstall is normally needed. Keep both copies private. Clipboard history remains session-only; its image files are removed when entries expire, history is cleared, or the app exits. Received files are retained.
-
-### Transfer confirmation and limits
-
-The phone displays **Sending…** until Windows confirms the clipboard write. A disconnected or timed-out transfer displays **Delivery not confirmed** and a Retry button. Retry uses the same transfer ID and is available for five minutes; Windows retains up to 1,000 successful IDs for ten minutes during its current session to prevent duplicate writes after reconnecting. A Windows restart clears those receipts.
-
-Text is limited to 1 MiB of UTF-8 data. Clipboard images must be PNG or JPEG, at most 20 MiB compressed and after PNG conversion, and at most 40 megapixels. Larger images can be sent as regular files (up to 500 MiB). The limits can be lowered with `maxTextBytes` and `maxImageBytes` in `runtime/config.json` while QuickClip is closed. History holds 1–200 items, with 50 as the default; interfaces load thumbnails and fetch full images only for Copy. Old images may become unavailable when Windows prunes history.
-
-Text, image, and file preferences govern new transfers in both directions. Tray **Pause Sync** pauses all new transfers. Existing history and previously received files remain available. Phone uploads interrupted by backgrounding or a ten-minute timeout must be retried manually; check Windows before resending a file because file uploads do not have clipboard-style deduplication.
-
-Browser requests must originate from the QuickClip server's own HTTPS origin. REST requests use Bearer authentication; downloads use file-scoped links that expire after 60 seconds. Pairing QR codes contain a browser URL with credentials in its fragment, which is removed after saving the pairing. WebSocket authentication still uses the pairing token in its handshake URL. Do not share pairing links or server logs containing credentials.
-
-After updating, fully quit and restart Windows QuickClip and reload the phone page so both use the updated protocol. No token or certificate rotation is automatic. If private credentials have been exposed, replace them deliberately and re-pair; replacing the CA also requires installing and trusting it on the phone.
-
-### Verification
-
-Run `npm test` for transport, validation, settings, retry, migration, and history-storage tests. Run `npm run test:electron` for an isolated Electron check of PNG decoding, rendered phone/desktop interfaces, confirmed transfers, full-resolution Copy, pause/resume, and history reload. The Electron check uses hidden windows, temporary certificates, and a simulated clipboard; it does not read or change your system clipboard. Test screenshots are saved under `.test-output/`. Final iPhone verification should include sending text and an image, copying a history image after a reload, uploading/downloading a file, and reconnecting after locking the phone.
-
----
-
-## ❓ Troubleshooting & FAQs
+> If **Connecting...** persistently remains on screen in Safari after the certificate is installed and trusted, open the pairing link in **Chrome on the iPhone** instead.
 
 <details>
-<summary><strong>My iPhone stays on "Connecting..." or cannot find the PC</strong></summary>
+<summary><strong>Why Windows may call the CA certificate untrusted</strong></summary>
 
-* Check that both your Windows PC and your iPhone are on the **exact same Wi-Fi network**.
-* Check if your router has **Guest Mode** or **AP Isolation** enabled; these prevent local devices from communicating with each other.
-* Ensure **Windows Defender Firewall** is not blocking Node.js or Electron. You can allow port `8443` (TCP) and `5353` (UDP for mDNS) in Windows Security settings:
-  1. Open **Windows Security → Firewall & network protection → Allow an app through firewall**.
-  2. Ensure `node.exe` or `electron.exe` has checkmarks for **Private** networks.
+<p align="center">
+  <img src="./assets/readme/windows-certificate.png" alt="Windows certificate viewer stating that the QuickClip CA is not trusted by the Windows root store" width="330">
+</p>
+<p align="center"><sub>Double-clicking the downloaded CA on Windows can show this message because the CA is not installed in the Windows Trusted Root store. QuickClip's iPhone setup only requires transferring this file and trusting it on iOS; this Windows dialog is not the iPhone trust step.</sub></p>
+
+</details>
+
+## Configuration and storage
+
+QuickClip stores runtime data in `app.getPath('userData')/runtime`, normally `%APPDATA%/quickclip/runtime` on Windows.
+
+| Path | Purpose |
+| --- | --- |
+| `runtime/config.json` | Pairing token and validated synchronization settings |
+| `runtime/certs/` | Local CA, server certificate, private keys, and the last certificate IP |
+| `runtime/received/` | Files transferred in either direction |
+| `runtime/received/index.json` | Metadata and managed local paths for shared files |
+| `runtime/clipboard-images/` | Full-resolution images for the current clipboard-history session |
+| `runtime/tmp/` | Temporary storage used while phone uploads are in progress |
+
+When migrating from the older project-level `data/` directory, QuickClip copies and verifies the data before activating the new location. The original directory is retained as a recovery copy. Clipboard history is session-only; associated image files are removed as entries expire, history is cleared, or the app exits. Received files persist.
+
+### Limits and delivery behavior
+
+- Text clipboard payload: up to 1 MiB of UTF-8 data.
+- Clipboard image: PNG or JPEG, up to 20 MiB compressed and after PNG conversion, and up to 40 megapixels.
+- File upload: one file at a time, up to 500 MiB.
+- Clipboard history: 1 to 200 items, with 50 as the default.
+- Clipboard delivery confirmation: 15-second confirmation window and a five-minute retry window.
+- Download tickets: scoped to one file or image and valid for 60 seconds.
+
+The text and image limits can be lowered with `maxTextBytes` and `maxImageBytes` in `runtime/config.json` while QuickClip is closed. Large images can be sent as ordinary files. If a phone upload is interrupted by backgrounding or the ten-minute upload timeout, check Windows before retrying because file uploads do not use clipboard-style receipt deduplication.
+
+## Troubleshooting
+
+<details>
+<summary><strong>The iPhone stays on "Connecting..."</strong></summary>
+
+- Confirm that the Windows PC and iPhone are on the same Wi-Fi network.
+- Avoid guest Wi-Fi, AP isolation, or client isolation.
+- Confirm that the QuickClip profile is both installed and enabled under **Certificate Trust Settings**.
+- Allow Electron/QuickClip on Windows **Private networks**. QuickClip uses TCP port `8443`; Bonjour/mDNS uses UDP port `5353`.
+- Re-scan the QR code after the PC's local IP address changes.
+- If Safari continues to show **Connecting...**, use **Chrome on the iPhone** to open the pairing link.
+
 </details>
 
 <details>
-<summary><strong>Safari says "This Connection is Not Private"</strong></summary>
+<summary><strong>The browser reports a private or untrusted connection</strong></summary>
 
-* This happens if the QuickClip CA certificate is not trusted yet. Make sure you completed both step 2 (installing the profile under `General → VPN & Device Management`) AND step 3 (enabling full trust under `General → About → Certificate Trust Settings`).
+Installing the profile and enabling full trust are separate iOS steps. Verify both **Settings > General > VPN & Device Management > QuickClip** and **Settings > General > About > Certificate Trust Settings > QuickClip**.
+
 </details>
 
 <details>
-<summary><strong>What happens if my PC's LAN IP address changes?</strong></summary>
+<summary><strong>The PC's local IP address changed</strong></summary>
 
-* QuickClip automatically checks your LAN IP on startup. If your IP changes (for example, from `192.168.1.42` to `192.168.1.55`), QuickClip will automatically regenerate the server certificate for the new IP while preserving your root CA. Simply re-scan the QR code on your iPhone to update the connection URL.
+QuickClip checks the local IPv4 address at startup. When it changes, QuickClip creates a new server certificate signed by the existing CA. Restart QuickClip and re-scan the QR code; the CA normally does not need to be installed again.
+
 </details>
 
----
+<details>
+<summary><strong>A transfer is disabled or remains unconfirmed</strong></summary>
 
-## 📜 License
+Check the Windows Settings tab and the tray's pause state. Clipboard sends wait for a receipt from Windows; reconnect and use **Retry** within five minutes if delivery was not confirmed. For an interrupted file upload, check the Windows Files tab before sending it again.
 
-Distributed under the **MIT License**. See `LICENSE` for more information.
+</details>
+
+## Verification
+
+```powershell
+npm test
+npm run test:electron
+```
+
+`npm test` covers transport, validation, settings, retry, migration, and history storage. `npm run test:electron` runs an isolated Electron check for clipboard decoding, the desktop and phone interfaces, confirmed transfers, pause/resume, and history reload. Test screenshots are written to `.test-output/`.
+
+For final device verification, send text and an image in both directions, copy a history image after reloading the phone page, upload and download a file, and reconnect after locking the phone.
+
+## License
+
+Distributed under the MIT License, as declared in `package.json`.
