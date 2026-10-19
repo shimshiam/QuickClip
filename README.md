@@ -272,7 +272,15 @@ At startup, QuickClip renews the server certificate if it expires within 30 days
 
 In the Windows Pair tab, select **Create pairing code**, or select **New pairing code** in Settings, then scan it within five minutes. Each code works once; generating another invalidates the previous code. Up to 20 devices can be trusted. **Remove** revokes one device's credential. **Disconnect all** removes all trusted devices and invalidates the current invitation. These actions close connections and invalidate the affected download links and active requests.
 
-**Joining password:** choose 1–128 characters, including letters, spaces, and symbols. The preference and password hash persist across restarts. Leave the password field blank to keep the saved password, or enter a replacement and select **Save**. Saving a new password or changing the requirement invalidates the previous QR and creates a fresh one. Five incorrect attempts invalidate an invitation; create another code to try again. Existing trusted devices keep their credentials, so changing the joining password does not sign them out. Use **Remove** or **Disconnect all** to revoke access.
+**Joining password:** choose 1–128 characters, including letters, spaces, and symbols. The preference and password hash persist across restarts. Leave the password field blank to keep the saved password, or enter a replacement and select **Save**. Saving a new password or changing the requirement invalidates the previous QR and creates a fresh one. Five incorrect attempts invalidate an invitation; create another code to try again.
+
+**Changing a password with connected devices:** selecting **Save** opens a compact device review before anything changes. The list includes connected and offline trusted devices.
+
+- Choose **Keep all** or **Remove all**, or toggle **Keep / Remove** for individual devices.
+- Adjust **Access**, **View**, and **Write** using the same icon buttons as the Devices drawer. Hover for the permission name and current state. Controls also have accessible labels; permissions are disabled for devices marked for removal, and View/Write controls are disabled when Access is off.
+- Select **Save changes** to apply the password and device choices. Removed devices must pair again; kept devices retain their credentials with the selected permissions. **Cancel** leaves everything unchanged.
+
+If the device list or permissions change during review, cancel and reopen it. Without connected devices, changing the password keeps trusted devices; use **Remove** or **Disconnect all** to revoke them.
 
 Each paired device has three permissions, saved across app restarts:
 
@@ -363,7 +371,7 @@ npm test
 npm run test:electron
 ```
 
-`npm test` currently passes 55 tests covering transport, validation, settings persistence, password verification and retry limits, certificate validation, permission changes, upload cleanup, migration, and history storage. `npm run test:electron` runs an isolated Electron check for clipboard decoding, the desktop and phone interfaces, confirmed transfers, pause/resume, history reload, custom-password joining, existing-tab QR navigation, and a visible, clickable password field. This is a Chromium check, not a substitute for testing on a physical iPhone. Test screenshots are written to `.test-output/`.
+`npm test` currently passes 56 tests covering transport, validation, settings persistence, password verification and retry limits, device-review validation and failed-save rollback, certificate validation, permission changes, upload cleanup, migration, and history storage. `npm run test:electron` runs an isolated Electron check for clipboard decoding, the desktop and phone interfaces, confirmed transfers, pause/resume, history reload, custom-password joining, existing-tab QR navigation, a visible, clickable password field, and device-review cancellation, selection, and permission icons. This is a Chromium check, not a substitute for testing on a physical iPhone. Test screenshots are written to `.test-output/`.
 
 For final device verification, send text and an image in both directions, copy a history image after reloading the phone page, upload and download a file, and reconnect after locking the phone.
 
