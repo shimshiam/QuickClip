@@ -22,7 +22,12 @@ QuickClip runs an HTTPS and WebSocket server inside an Electron app on your Wind
 - Keeps a session-only clipboard history and a persistent shared-file list.
 - Encrypts traffic in transit with a locally generated CA and server certificate.
 - Pairs each phone using a single-use QR invitation that expires after five minutes, then issues a separate revocable device credential.
-- Runs in the Windows system tray and lets you pause text, image, or file synchronization.
+- Provides per-device Access, View, and Write controls from the connection badge and Settings, with individual device removal and a disconnect-all action.
+- Confirms clipboard delivery and supports retries when a receipt does not arrive.
+- Lets you copy or clear clipboard history, sort files by date, name, or size, open saved files, reveal them in Explorer, and delete managed copies.
+- Provides clipboard and file-sharing expiry, a shared-storage quota, upload limits, and blocking for executable and other risky file types.
+- Runs in the Windows system tray with pause/resume, separate text, image, and file sync settings, and a remote-access switch.
+- Selects a local network adapter automatically or lets you choose one from the tray menu.
 - Supports light and dark interfaces on both devices.
 
 ## Demo
@@ -30,9 +35,9 @@ QuickClip runs an HTTPS and WebSocket server inside an Electron app on your Wind
 ### Pair from Windows
 
 <p align="center">
-  <img src="./assets/readme/windows-pairing-dark-redacted.png" alt="QuickClip desktop Pair tab showing a redacted QR code and one-time certificate instructions" width="520">
+  <img src="./assets/readme/windows-pairing-current.png" alt="QuickClip desktop Pair tab with Create pairing code, server address, certificate download, and setup instructions" width="520">
 </p>
-<p align="center"><sub>The Windows Pair tab shows the local server address, QR code, certificate download, and the one-time iPhone trust steps.</sub></p>
+<p align="center"><sub>The Pair tab creates a single-use invitation on demand. Desktop screenshots of Pair, Devices, Settings, and Files use sample device names, files, and a sample local address.</sub></p>
 
 Scan the QR code after installing and trusting the certificate. The phone exchanges the invitation for its own credential, stores that credential locally, and removes the invitation from the visible URL.
 
@@ -77,12 +82,26 @@ Browser clipboard access requires a user action on iOS, so the phone cannot sile
 
 Files uploaded from the phone are stored under QuickClip's per-user `runtime/received` directory. Files selected on Windows are copied into the same managed directory and announced to connected phones, where **Save** requests a short-lived download link.
 
+<p align="center">
+  <img src="./assets/readme/windows-files-current.png" alt="Windows Files tab with sorting, Share File with Mobile, Open, Folder, and Delete saved copy controls" width="720">
+</p>
+<p align="center"><sub>Sort files by newest or oldest, name A–Z or Z–A, or largest or smallest. Open a saved file, show its folder in Explorer, or delete QuickClip's copy without deleting the original.</sub></p>
+
+### Manage devices
+
+Click the connection badge in the top-right corner to open **Devices**. Each paired device shows its connection state and separate **Access**, **View**, and **Write** controls. The same permissions are available under **Settings > Security**.
+
+<p align="center">
+  <img src="./assets/readme/windows-device-permissions.png" alt="Devices panel showing connected iPhone and offline iPad with Access, View, Write, and Remove controls" width="520">
+</p>
+<p align="center"><sub>Allow a device to view shared content, send content to Windows, or do both. Turn off Access to block it while keeping its pairing, or choose Remove to require pairing again.</sub></p>
+
 ### Configure synchronization
 
 <p align="center">
-  <img src="./assets/readme/windows-settings.png" alt="QuickClip desktop settings for clipboard text, images, files, history limit, and security controls (older screenshot)" width="620">
+  <img src="./assets/readme/windows-settings-current.png" alt="QuickClip Settings showing sync preferences, device permissions, remote access, clipboard expiry, file sharing expiry, and storage quota" width="620">
 </p>
-<p align="center"><sub>Settings now also includes trusted-device revocation, remote-access blocking, retention and storage controls. The screenshot above predates those controls.</sub></p>
+<p align="center"><sub>Settings controls text, image, and file sync; clipboard history size; trusted devices; remote access; content expiry; and shared storage capacity.</sub></p>
 
 <details>
 <summary><strong>Light and dark pairing views</strong></summary>
@@ -175,7 +194,7 @@ On first launch QuickClip:
 2. Generates a local CA and an IP-specific server certificate under `runtime/certs`.
 3. Starts the HTTPS and WebSocket server on port `8443`.
 4. Starts clipboard monitoring and advertises the local HTTPS service with Bonjour/mDNS.
-5. Opens the desktop dashboard and displays the pairing QR code.
+5. Opens the desktop dashboard, where **Create pairing code** generates a single-use QR invitation.
 
 ## One-time iPhone setup
 
@@ -208,7 +227,7 @@ Open **Settings > General > About > Certificate Trust Settings**. Under **Enable
 
 ### 4. Scan and connect
 
-Return to the Windows **Pair** tab and scan its QR code with the iPhone camera. Open the link and wait for **Connected**. In Safari, use **Share > Add to Home Screen** if you want QuickClip to launch like an app.
+Return to the Windows **Pair** tab, select **Create pairing code**, and scan the QR code with the iPhone camera within five minutes. Open the link and wait for **Connected**. In Safari, use **Share > Add to Home Screen** if you want QuickClip to launch like an app.
 
 > [!TIP]
 > If **Connecting...** persistently remains on screen in Safari after the certificate is installed and trusted, open the pairing link in **Chrome on the iPhone** instead.
@@ -230,7 +249,7 @@ QuickClip stores runtime data in `app.getPath('userData')/runtime`, normally `%A
 | Path | Purpose |
 | --- | --- |
 | `runtime/config.json` | Validated synchronization and security settings; legacy tokens are ignored |
-| `runtime/devices.json` | Trusted device names, IDs and credential hashes |
+| `runtime/devices.json` | Trusted device names, IDs, permissions, and credential hashes |
 | `runtime/certs/` | Local CA, server certificate, private keys, and the last certificate IP |
 | `runtime/received/` | Files transferred in either direction |
 | `runtime/received/index.json` | Metadata and managed local paths for shared files |
@@ -243,7 +262,17 @@ At startup, QuickClip renews the server certificate if it expires within 30 days
 
 ### Pairing, privacy and storage controls
 
-After this security update, existing phones must pair again. In Windows Settings, select **New pairing code**, then scan it within five minutes. Each code works once; generating another invalidates the previous code. Up to 20 devices can be trusted. **Revoke** removes one device. **Disconnect all** removes all trusted devices and invalidates the current invitation. These actions close connections and invalidate the affected download links and active requests.
+In the Windows Pair tab, select **Create pairing code**, or select **New pairing code** in Settings, then scan it within five minutes. Each code works once; generating another invalidates the previous code. Up to 20 devices can be trusted. **Remove** revokes one device's credential. **Disconnect all** removes all trusted devices and invalidates the current invitation. These actions close connections and invalidate the affected download links and active requests.
+
+Each paired device has three permissions, saved across app restarts:
+
+| Permission | When enabled | When disabled |
+| --- | --- | --- |
+| **Access (A)** | Allows the device to connect, subject to its View and Write permissions | Blocks remote reads and writes without removing the pairing; View and Write choices are preserved |
+| **View (V)** | Allows clipboard history, shared-file lists, downloads, and live content updates | Blocks those reads and updates; Write can remain enabled |
+| **Write (W)** | Allows clipboard submissions and file uploads to Windows, subject to sync settings | Blocks submissions and uploads; View can remain enabled |
+
+Permission changes disconnect the affected device, cancel its active requests, and invalidate its download links. Finish uploads and downloads before toggling permissions. View and Write changes reconnect automatically while Access remains enabled. After restoring Access, reload the phone page. Turning off a permission cannot recall content already copied or downloaded.
 
 **Allow remote access** blocks all remote reads, writes and pairing when switched off, while retaining trusted devices for later use. Enable it and reload the phone page to reconnect. **Pause sync** only stops new transfers; it leaves existing shared content accessible.
 
