@@ -1,5 +1,5 @@
-// QuickClip Service Worker v3
-const CACHE_NAME = 'quickclip-v4';
+// QuickClip app-shell cache. API responses are never cached.
+const CACHE_NAME = 'quickclip-v8';
 const APP_SHELL = [
   '/',
   '/index.html',

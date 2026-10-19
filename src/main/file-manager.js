@@ -65,6 +65,17 @@ function createFileManager(dataDir, policy = createPolicy()) {
 
   let index = loadIndex();
 
+  function publish(entry) {
+    const nextIndex = [...index, entry];
+    try { saveIndex(nextIndex); }
+    catch (err) {
+      // Do not leave an unlisted copy consuming quota after a failed commit.
+      try { fs.unlinkSync(entry.path); } catch (_) { /* preserve the original error */ }
+      throw err;
+    }
+    index = nextIndex;
+  }
+
   // ── Helpers & Path Validation ─────────────────────────────────────────────
 
   /**
@@ -158,9 +169,7 @@ function createFileManager(dataDir, policy = createPolicy()) {
       timestamp: Date.now(),
     };
 
-    const nextIndex = [...index, entry];
-    saveIndex(nextIndex);
-    index = nextIndex;
+    publish(entry);
 
     console.log(`[FileManager] Saved file: ${safeName} (${buffer.length} bytes)`);
     return { id, name: safeName, path: fullPath, size: buffer.length };
@@ -212,9 +221,7 @@ function createFileManager(dataDir, policy = createPolicy()) {
       timestamp: Date.now(),
     };
 
-    const nextIndex = [...index, entry];
-    saveIndex(nextIndex);
-    index = nextIndex;
+    publish(entry);
 
     console.log(`[FileManager] Saved file from path: ${safeName} (${actualSize} bytes)`);
     return { id, name: safeName, path: fullPath, size: actualSize };
@@ -258,9 +265,7 @@ function createFileManager(dataDir, policy = createPolicy()) {
       timestamp: Date.now(),
     };
 
-    const nextIndex = [...index, entry];
-    saveIndex(nextIndex);
-    index = nextIndex;
+    publish(entry);
 
     console.log(`[FileManager] Saved desktop file: ${safeName} (${actualSize} bytes)`);
     return { id, name: safeName, path: fullPath, size: actualSize };
@@ -303,13 +308,15 @@ function createFileManager(dataDir, policy = createPolicy()) {
         }
       } catch (err) {
         console.error('[FileManager] Failed to delete file from disk:', err.message);
+        throw err;
       }
     } else {
       console.warn('[FileManager] Refusing to delete path outside receivedDir:', entry.path);
     }
 
-    index.splice(entryIdx, 1);
-    saveIndex(index);
+    const nextIndex = index.filter((_, i) => i !== entryIdx);
+    saveIndex(nextIndex);
+    index = nextIndex;
     console.log(`[FileManager] Deleted file: ${entry.name}`);
     return true;
   }

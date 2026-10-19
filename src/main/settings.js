@@ -1,13 +1,13 @@
 'use strict';
 
-const DEFAULTS = Object.freeze({ syncText: true, syncImages: true, syncFiles: true,
+const DEFAULTS = Object.freeze({ requirePasscode: false, syncText: true, syncImages: true, syncFiles: true,
   remoteAccess: true, clipboardTtlMinutes: 15, fileTtlHours: 24, storageQuotaMB: 2048,
   maxHistory: 50, maxTextBytes: 1024 * 1024, maxImageBytes: 20 * 1024 * 1024 });
 
 function validateSettings(input = {}, current = DEFAULTS) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Invalid settings');
   const result = { ...DEFAULTS, ...current };
-  for (const key of ['syncText', 'syncImages', 'syncFiles', 'remoteAccess']) {
+  for (const key of ['requirePasscode', 'syncText', 'syncImages', 'syncFiles', 'remoteAccess']) {
     if (!(key in input)) continue;
     if (typeof input[key] !== 'boolean') throw new Error(`${key} must be true or false`);
     result[key] = input[key];

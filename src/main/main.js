@@ -44,6 +44,7 @@ const { createFileManager } = require('./file-manager');
 const { createPolicy, validateSettings } = require('./settings');
 const { migrateData, atomicJSON } = require('./storage');
 const { createDeviceStore } = require('./devices');
+const { hashPassword } = require('./pairing-password');
 
 // ── Constants ───────────────────────────────────────────────────────────────────
 const LEGACY_DATA_DIR = path.join(__dirname, '..', '..', 'data');
@@ -211,7 +212,10 @@ function registerIPCHandlers() {
     try {
       const url = `https://${serverInfo.ip}:${serverInfo.port}`;
       if (!syncPolicy.get().remoteAccess) throw new Error('Enable remote access before pairing');
-      return await generateQRCode(url, devices.invite().token);
+      if (syncPolicy.get().requirePasscode && !config.pairingPasswordHash) throw new Error('Set a joining password first');
+      const invitation = devices.invite(syncPolicy.get().requirePasscode ? config.pairingPasswordHash : '');
+      const qr = await generateQRCode(url, invitation.token);
+      return qr;
     } catch (err) {
       console.error('[IPC] get-qr-code error:', err.message);
       return '';
@@ -252,16 +256,20 @@ function registerIPCHandlers() {
   });
 
   ipcMain.handle('get-settings', () => {
-    return config.settings || {};
+    return { ...config.settings, hasPairingPassword: !!config.pairingPasswordHash };
   });
 
   ipcMain.handle('update-settings', (_event, settings) => {
     try {
       const validated = validateSettings(settings, config.settings);
-      const nextConfig = { ...config, settings: validated };
+      const pairingPasswordHash = 'pairingPassword' in settings ? hashPassword(settings.pairingPassword) : config.pairingPasswordHash;
+      if (validated.requirePasscode && !pairingPasswordHash) throw new Error('Set a joining password first');
+      const pairingChanged = validated.requirePasscode !== syncPolicy.get().requirePasscode || pairingPasswordHash !== config.pairingPasswordHash;
+      const nextConfig = { ...config, settings: validated, pairingPasswordHash };
       saveConfig(nextConfig);
       config = nextConfig;
       syncPolicy.update(validated);
+      if (pairingChanged) devices.invalidateInvitation();
       runningServer.enforceAccess();
       trimHistory();
       broadcastSettings();

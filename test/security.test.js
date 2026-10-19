@@ -1,3 +1,5 @@
+const { hashPassword } = require('../src/main/pairing-password');
+const customPassword = 'My joining password! 42';
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -7,6 +9,28 @@ const { createDeviceStore } = require('../src/main/devices');
 const { createPolicy } = require('../src/main/settings');
 const { assertSafeFile } = require('../src/main/file-safety');
 const { load, temporary, fakeElectron, pngHeader } = require('./helpers');
+
+test('passcodes gate joining, bound guesses, expire and can be disabled', (t) => {
+  let now = 1000;
+  const devices = createDeviceStore(temporary(t), () => now);
+  const invitation = devices.invite(hashPassword(customPassword));
+  assert.equal(invitation.passwordHash, undefined);
+  assert.deepEqual(devices.pair(invitation.token, 'Phone'), { passcodeRequired: true });
+  assert.equal(devices.list().length, 0);
+  assert.equal(devices.pair(invitation.token, 'Phone', 'wrong').passcodeRequired, true);
+  const paired = devices.pair(invitation.token, 'Phone', customPassword);
+  assert.equal(devices.authenticate(paired.token), paired.deviceId);
+  assert.equal(devices.pair(invitation.token, 'Replay', customPassword), null);
+  const locked = devices.invite(hashPassword(customPassword));
+  for (let i = 0; i < 4; i++) assert.equal(devices.pair(locked.token, 'Phone', 'wrong').passcodeRequired, true);
+  assert.equal(devices.pair(locked.token, 'Phone', 'wrong'), null);
+  assert.equal(devices.pair(locked.token, 'Phone', customPassword), null);
+  const expired = devices.invite(hashPassword(customPassword)); now += 300001;
+  assert.equal(devices.pair(expired.token, 'Phone', customPassword), null);
+  const invalidated = devices.invite(); devices.invalidateInvitation();
+  assert.equal(devices.pair(invalidated.token, 'Phone'), null);
+  assert.ok(devices.pair(devices.invite(false).token, 'Phone').token);
+});
 
 test('pairing invitations expire, work once, persist only credential hashes and support revocation', (t) => {
   const root = temporary(t); let now = 1000;
@@ -125,4 +149,32 @@ test('device permissions persist, validate patches and retain pairing while acce
   assert.equal(loaded.allows(paired.deviceId, 'write'), true);
   assert.throws(() => loaded.updatePermissions(paired.deviceId, { write: 'false' }), /Invalid/);
   assert.throws(() => loaded.updatePermissions(paired.deviceId, { unknown: true }), /Invalid/);
+});
+
+test('failed file-index writes remove unpublished copies and preserve originals', (t) => {
+  const root = temporary(t);
+  const original = path.join(root, 'original.txt'); fs.writeFileSync(original, 'source');
+  const manager = load('src/main/file-manager.js', { electron: fakeElectron(),
+    './storage': { atomicJSON() { throw new Error('Disk full'); } },
+  }).createFileManager(root);
+  assert.throws(() => manager.saveFile(Buffer.from('remote'), 'remote.txt'), /Disk full/);
+  assert.throws(() => manager.saveDesktopFile(original), /Disk full/);
+  const tmp = path.join(root, 'upload'); fs.writeFileSync(tmp, 'upload');
+  assert.throws(() => manager.saveFileFromPath(tmp, 'upload.txt', 6), /Disk full/);
+  assert.equal(manager.listFiles().length, 0);
+  assert.deepEqual(fs.readdirSync(path.join(root, 'received')), []);
+  assert.equal(fs.readFileSync(original, 'utf8'), 'source');
+});
+
+test('failed deletion retains the listed file so it can be retried', (t) => {
+  const root = temporary(t); let locked = true;
+  const manager = load('src/main/file-manager.js', { electron: fakeElectron(),
+    fs: { ...fs, unlinkSync(file) { if (locked) throw new Error('File locked'); return fs.unlinkSync(file); } },
+  }).createFileManager(root);
+  const file = manager.saveFile(Buffer.from('keep'), 'keep.txt');
+  assert.throws(() => manager.deleteFile(file.id), /File locked/);
+  assert.equal(manager.listFiles().length, 1);
+  assert.ok(fs.existsSync(file.path));
+  locked = false; assert.equal(manager.deleteFile(file.id), true);
+  assert.equal(manager.listFiles().length, 0);
 });

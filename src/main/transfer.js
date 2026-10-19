@@ -20,12 +20,13 @@ function createReceiptCache(now = Date.now) {
   };
 }
 
-function attachTransferHandler(ws, { policy, write, receipts, imageTimeout = 15000 }) {
+function attachTransferHandler(ws, { policy, write, receipts, authorize = () => {}, imageTimeout = 15000 }) {
   let pending = null;
   const send = (message) => { if (ws.readyState === 1) ws.send(JSON.stringify(message)); };
   const reset = () => { if (pending) clearTimeout(pending.timer); pending = null; };
   const fail = (id, error) => send({ type: 'transfer-result', id: id || null, ok: false, error });
   const deliver = (id, type, content) => {
+    authorize();
     const fingerprint = crypto.createHash('sha256').update(type).update(content).digest('hex');
     const previous = receipts.get(id);
     if (previous && previous.fingerprint !== fingerprint) throw new Error('Transfer ID already used for different content');
@@ -58,6 +59,7 @@ function attachTransferHandler(ws, { policy, write, receipts, imageTimeout = 150
       if (msg.type === 'ping') { send({ type: 'pong' }); return; }
       if (typeof msg.id !== 'string' || !ID.test(msg.id)) throw new Error('A valid transfer ID is required; reload QuickClip on your phone');
       id = msg.id;
+      authorize();
       if (pending) throw new Error('Finish the current image transfer first');
       if (msg.type === 'clipboard-text') {
         if (typeof msg.content !== 'string' || msg.content.length === 0) throw new Error('Text is empty or invalid');
@@ -76,6 +78,10 @@ function attachTransferHandler(ws, { policy, write, receipts, imageTimeout = 150
   });
   ws.on('close', reset);
   ws.on('error', reset);
+  return () => {
+    if (pending) fail(pending.id, 'Write permission changed; retry the image after enabling Write');
+    reset();
+  };
 }
 
 module.exports = { attachTransferHandler, createReceiptCache };

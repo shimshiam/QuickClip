@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { atomicJSON } = require('./storage');
+const { verifyPassword } = require('./pairing-password');
 const digest = (token) => crypto.createHash('sha256').update(token).digest('hex');
 
 function createDeviceStore(dataDir, now = Date.now) {
@@ -19,13 +20,24 @@ function createDeviceStore(dataDir, now = Date.now) {
   const permissions = (device) => ({ view: true, write: true, access: true, ...device.permissions });
   function commit(next) { atomicJSON(file, next); devices = next; }
   return {
-    invite() {
+    invalidateInvitation() { invitation = null; },
+    invite(passwordHash = '') {
+      if (passwordHash && !/^[a-f0-9]{32}:[a-f0-9]{64}$/.test(passwordHash)) throw new Error('Set a joining password first');
       invitation = { token: crypto.randomBytes(32).toString('hex'), expires: now() + 5 * 60000 };
-      return { ...invitation };
+      if (passwordHash) { invitation.passwordHash = passwordHash; invitation.attempts = 0; }
+      return { token: invitation.token, expires: invitation.expires };
     },
-    pair(token, name) {
+    pair(token, name, passcode) {
       if (typeof token !== 'string' || !invitation || invitation.expires <= now()
         || digest(token) !== digest(invitation.token)) return null;
+      if (invitation.passwordHash) {
+        if (passcode === undefined) return { passcodeRequired: true };
+        if (!verifyPassword(passcode, invitation.passwordHash)) {
+          invitation.attempts++;
+          if (invitation.attempts >= 5) { invitation = null; return null; }
+          return { passcodeRequired: true, error: 'Incorrect password. Try again.' };
+        }
+      }
       if (devices.length >= 20) throw new Error('Remove a trusted device before pairing another');
       const credential = crypto.randomBytes(32).toString('hex');
       const device = { id: crypto.randomUUID(), name: typeof name === 'string' ? name.trim().slice(0, 80) || 'Phone' : 'Phone',

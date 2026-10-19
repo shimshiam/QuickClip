@@ -1,3 +1,5 @@
+const { hashPassword } = require('../src/main/pairing-password');
+const customPassword = 'My joining password! 42';
 'use strict';
 const assert = require('node:assert/strict');
 const http = require('node:http');
@@ -9,8 +11,23 @@ const WebSocket = require('ws');
 const { load, temporary, fakeElectron, pngHeader } = require('./helpers');
 const { createPolicy } = require('../src/main/settings');
 
-async function setup(t) {
+test('pairing API challenges for a passcode before issuing credentials', async (t) => {
+  const s = await setup(t);
+  const invitation = s.devices.invite(hashPassword(customPassword));
+  const pair = passcode => fetch(s.base + '/api/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invitation: invitation.token, passcode }) });
+  const challenge = await pair();
+  assert.equal(challenge.status, 403);
+  assert.deepEqual(await challenge.json(), { passcodeRequired: true });
+  assert.equal((await pair('wrong')).status, 403);
+  const response = await pair(customPassword);
+  assert.equal(response.status, 200);
+  assert.ok((await response.json()).token);
+  assert.equal((await pair(customPassword)).status, 401);
+});
+
+async function setup(t, prepare = () => {}) {
   const dataDir = temporary(t);
+  prepare(dataDir);
   const policy = createPolicy();
   let now = Date.now();
   const electron = fakeElectron();
@@ -87,6 +104,78 @@ test('text, image, ping, receipts and retry across reconnect', { timeout: 10000 
   assert.equal((await c.wait((m) => m.type === 'clipboard-image-available')).id, history[0].id);
   s.api.broadcastClipboard(history[1]);
   assert.equal((await c.wait((m) => m.type === 'clipboard-text')).content, text.content);
+});
+
+test('View changes preserve uploads while Write removal cancels and cleans them', { timeout: 10000 }, async (t) => {
+  const s = await setup(t);
+  async function partialUpload() {
+    const request = http.request(s.base + '/api/upload', { method: 'POST', headers: {
+      ...s.headers, 'Content-Type': 'multipart/form-data; boundary=permission-boundary',
+    } });
+    request.on('error', () => {}); t.after(() => request.destroy());
+    request.write('--permission-boundary\r\nContent-Disposition: form-data; name="file"; filename="partial.txt"\r\n\r\nabc');
+    for (let i = 0; i < 100 && !fs.readdirSync(path.join(s.dataDir, 'tmp')).length; i++) await new Promise(r => setTimeout(r, 10));
+    assert.equal(fs.readdirSync(path.join(s.dataDir, 'tmp')).length, 1);
+    return request;
+  }
+  const request = await partialUpload();
+  s.devices.updatePermissions(s.credential.deviceId, { view: false });
+  s.devices.updatePermissions(s.credential.deviceId, { view: true });
+  const response = once(request, 'response');
+  request.end('\r\n--permission-boundary--\r\n');
+  const [res] = await response; res.resume();
+  assert.equal(res.statusCode, 200);
+  assert.equal(s.fileManager.listFiles().length, 1);
+  await partialUpload();
+  s.devices.updatePermissions(s.credential.deviceId, { write: false });
+  for (let i = 0; i < 100 && fs.readdirSync(path.join(s.dataDir, 'tmp')).length; i++) await new Promise(r => setTimeout(r, 10));
+  assert.deepEqual(fs.readdirSync(path.join(s.dataDir, 'tmp')), []);
+  assert.equal(s.fileManager.listFiles().length, 1);
+});
+
+test('Write changes preserve downloads and cancel pending images across a rapid off/on toggle', async (t) => {
+  const s = await setup(t), c = await s.connect();
+  const file = s.fileManager.saveFile(Buffer.from('private'), 'private.txt');
+  const ticket = await (await fetch(s.base + '/api/download-ticket', { method: 'POST',
+    headers: { ...s.headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: file.id, kind: 'file' }) })).json();
+  c.send({ type: 'clipboard-image', id: 'pending-image', size: pngHeader.length });
+  c.send({ type: 'ping' }); await c.wait(m => m.type === 'pong');
+  s.devices.updatePermissions(s.credential.deviceId, { write: false });
+  assert.equal((await c.wait(m => m.id === 'pending-image')).ok, false);
+  assert.equal(await (await fetch(s.base + ticket.url)).text(), 'private');
+  s.devices.updatePermissions(s.credential.deviceId, { write: true });
+  c.phone.send(pngHeader);
+  assert.match((await c.wait(m => m.type === 'transfer-result')).error, /metadata/);
+  assert.equal(s.monitor.getHistory().length, 0);
+  s.devices.updatePermissions(s.credential.deviceId, { view: false });
+  assert.equal((await fetch(s.base + ticket.url)).status, 401);
+});
+
+test('malformed uploads do not crash the server, leak files, or consume upload slots', { timeout: 10000 }, async (t) => {
+  const s = await setup(t);
+  for (const body of [
+    '--broken\r\nContent-Disposition: form-data; filename="bad.txt"\r\n\r\nx\r\n--broken--\r\n',
+    '--broken\r\nContent-Disposition: form-data; name=""; filename="bad.txt"\r\n\r\nx\r\n--broken--\r\n',
+    '--broken\r\nContent-Disposition: form-data; name="file"; filename="bad.txt"\r\n\r\ntruncated',
+  ]) {
+    const res = await fetch(s.base + '/api/upload', { method: 'POST', headers: {
+      ...s.headers, 'Content-Type': 'multipart/form-data; boundary=broken',
+    }, body });
+    assert.equal(res.status, 400);
+    for (let i = 0; i < 100 && fs.readdirSync(path.join(s.dataDir, 'tmp')).length; i++) await new Promise(r => setTimeout(r, 10));
+    assert.deepEqual(fs.readdirSync(path.join(s.dataDir, 'tmp')), []);
+  }
+  const body = new FormData(); body.append('file', new Blob(['ok']), 'safe.txt');
+  assert.equal((await fetch(s.base + '/api/upload', { method: 'POST', headers: s.headers, body })).status, 200);
+});
+
+test('startup removes only generated temporary uploads left by a crash', async (t) => {
+  const s = await setup(t, root => {
+    const tmp = path.join(root, 'tmp'); fs.mkdirSync(tmp);
+    fs.writeFileSync(path.join(tmp, '12345678-1234-1234-1234-123456789abc'), 'orphan');
+    fs.writeFileSync(path.join(tmp, 'keep.txt'), 'unrelated');
+  });
+  assert.deepEqual(fs.readdirSync(path.join(s.dataDir, 'tmp')), ['keep.txt']);
 });
 
 test('reject malformed, oversized, unexpected and undecodable transfers; recover', async (t) => {
@@ -265,24 +354,23 @@ test('per-device permissions block reads, broadcasts and writes, invalidate tick
   const ticket = await (await fetch(s.base + '/api/download-ticket', { method: 'POST',
     headers: { ...s.headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: file.id, kind: 'file' }) })).json();
   let c = await s.connect();
-  const closed = once(c.phone, 'close');
   s.devices.updatePermissions(s.credential.deviceId, { view: false });
-  assert.equal((await closed)[0], 4004);
+  assert.equal((await c.wait(m => m.type === 'settings')).settings.canView, false);
+  assert.equal(c.phone.readyState, WebSocket.OPEN);
   for (const endpoint of ['/api/history', '/api/files', '/api/files/' + file.id, '/api/clipboard-images/anything']) {
     assert.equal((await fetch(s.base + endpoint, { headers: s.headers })).status, 403);
   }
   assert.equal((await fetch(s.base + ticket.url)).status, 401);
   assert.equal((await fetch(s.base + '/api/download-ticket', { method: 'POST', headers: s.headers })).status, 403);
-  c = await s.connect();
   s.api.broadcastClipboard({ type: 'text', content: 'must not leak' });
   c.send({ type: 'ping' }); await c.wait(m => m.type === 'pong');
   assert.equal(c.messages.some(m => m.type === 'clipboard-text'), false);
   c.send({ type: 'clipboard-text', id: 'allowed-write', content: 'allowed' });
   assert.equal((await c.wait(m => m.id === 'allowed-write')).ok, true);
-  const changed = once(c.phone, 'close');
   s.devices.updatePermissions(s.credential.deviceId, { view: true, write: false });
-  await changed;
-  c = await s.connect();
+  const updated = await c.wait(m => m.type === 'settings');
+  assert.equal(updated.settings.canView, true);
+  assert.equal(updated.settings.syncText, false);
   assert.equal((await fetch(s.base + '/api/history', { headers: s.headers })).status, 200);
   c.send({ type: 'clipboard-text', id: 'blocked-write', content: 'blocked' });
   assert.equal((await c.wait(m => m.id === 'blocked-write')).ok, false);

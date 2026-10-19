@@ -73,33 +73,41 @@ function createServer(certData, options) {
     if (deviceId) { req.deviceId = deviceId; trackRequest(req, res, deviceId); return next(); }
     res.status(401).json({ error: 'Unauthorized' });
   }
-  function trackRequest(req, res, deviceId) {
-    activeRequests.set(req, { res, deviceId });
+  function trackRequest(req, res, deviceId, capability = 'access') {
+    activeRequests.set(req, { res, deviceId, capability });
     res.once('close', () => activeRequests.delete(req));
   }
   function deviceSettings(id) {
     const settings = policy.get();
     const write = devices.allows(id, 'write');
-    return { ...settings, syncText: settings.syncText && write, syncImages: settings.syncImages && write,
+    return { ...settings, canView: devices.allows(id, 'view'), syncText: settings.syncText && write, syncImages: settings.syncImages && write,
       syncFiles: settings.syncFiles && write };
   }
   function allowedDevice(id) { return policy.get().remoteAccess && devices.allows(id); }
   function enforceAccess(id = null, permissionsChanged = false) {
-    for (const client of clients) if (client.owner === httpsServer && (!allowedDevice(client.deviceId) || id === client.deviceId)) {
+    for (const client of clients) if (client.owner === httpsServer) {
+      if (allowedDevice(client.deviceId)) {
+        if (id === client.deviceId && client.ws.readyState === WebSocket.OPEN) {
+          if (!devices.allows(id, 'write')) client.cancelTransfer();
+          client.ws.send(JSON.stringify({ type: 'settings', settings: client.settings() }));
+        }
+        continue;
+      }
       clients.delete(client);
       notify(disconnectCallbacks, deviceInfo(client));
       client.ws.close(permissionsChanged ? (allowedDevice(client.deviceId) ? 4004 : 4003) : (policy.get().remoteAccess ? 4001 : 4003), 'Access changed');
       const timer = setTimeout(() => client.ws.terminate(), 1000); timer.unref();
     }
-    for (const [req, entry] of activeRequests) if (!allowedDevice(entry.deviceId) || id === entry.deviceId) {
+    for (const [req, entry] of activeRequests) if (!allowedDevice(entry.deviceId) || !devices.allows(entry.deviceId, entry.capability)) {
       req.destroy(); entry.res.destroy(); activeRequests.delete(req);
     }
-    for (const [key, ticket] of tickets) if (!allowedDevice(ticket.deviceId) || id === ticket.deviceId) tickets.delete(key);
+    for (const [key, ticket] of tickets) if (!allowedDevice(ticket.deviceId) || !devices.allows(ticket.deviceId, 'view')) tickets.delete(key);
   }
   devices.onRevoke(enforceAccess);
   devices.onChange(id => enforceAccess(id, true));
   const requirePermission = capability => (req, res, next) => {
     if (!devices.allows(req.deviceId, capability)) return res.status(403).json({ error: capability + ' permission is disabled on Windows' });
+    activeRequests.get(req).capability = capability;
     next();
   };
   function allowFiles(_req, res, next) {
@@ -121,8 +129,9 @@ function createServer(certData, options) {
   app.post('/api/pair', express.json({ limit: '4kb' }), (req, res, next) => {
     if (!policy.get().remoteAccess) return res.status(403).json({ error: 'Remote access is blocked on Windows' });
     try {
-      const result = devices.pair(req.body?.invitation, req.body?.name);
+      const result = devices.pair(req.body?.invitation, req.body?.name, req.body?.passcode);
       if (!result) return res.status(401).json({ error: 'Pairing code expired or already used. Generate a new code on Windows.' });
+      if (result.passcodeRequired) return res.status(403).json(result);
       res.json(result);
     } catch (err) { next(err); }
   });
@@ -154,13 +163,19 @@ function createServer(certData, options) {
       tickets.delete(req.params.ticket);
       return res.status(401).json({ error: 'Download link expired; tap Save again' });
     }
-    trackRequest(req, res, item.deviceId);
+    trackRequest(req, res, item.deviceId, 'view');
     const imagePath = item.kind === 'image' ? getImagePathFn(item.id) : null;
     sendStoredFile(res, item.kind === 'image' ? (imagePath ? { path: imagePath } : null) : fileManager.sharedFile(item.id), item.kind === 'image');
   });
 
   const tmpDir = path.join(dataDir, 'tmp');
   fs.mkdirSync(tmpDir, { recursive: true });
+  // A crash cannot run upload abort handlers. Only remove our own orphan files.
+  for (const entry of fs.readdirSync(tmpDir, { withFileTypes: true })) {
+    if (entry.isFile() && /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/.test(entry.name)) {
+      fs.unlinkSync(path.join(tmpDir, entry.name));
+    }
+  }
   function uploadSlot(req, res, next) {
     if (uploads >= 2) return res.status(429).json({ error: 'Two uploads are already in progress; try again shortly' });
     try { fileManager.assertCapacity(); } catch (err) { return res.status(507).json({ error: err.message }); }
@@ -194,6 +209,7 @@ function createServer(certData, options) {
     if (err instanceof multer.MulterError) return res.status(400).json({ error: err.code === 'LIMIT_FILE_SIZE' ? 'File exceeds the 500 MB limit' : 'Choose one file per upload' });
     if (err.type === 'entity.too.large') return res.status(413).json({ error: 'Request is too large' });
     if (err.type === 'entity.parse.failed' || err instanceof SyntaxError) return res.status(400).json({ error: 'Invalid JSON request' });
+    if (/Unexpected end of (form|file)|Malformed part header|Boundary not found/i.test(err.message)) return res.status(400).json({ error: 'Incomplete or malformed upload; retry the file' });
     if (/quota|disk space/.test(err.message)) return res.status(507).json({ error: err.message });
     if (/blocked for safety|Filename/.test(err.message)) return res.status(400).json({ error: err.message });
     console.error('[Server]', err.message);
@@ -214,7 +230,12 @@ function createServer(certData, options) {
     notify(connectCallbacks, deviceInfo(client));
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
-    attachTransferHandler(ws, { policy, receipts: { get: (id) => receipts.get(`${deviceId}:${id}`), set: (id, value) => receipts.set(`${deviceId}:${id}`, value) },
+    client.cancelTransfer = attachTransferHandler(ws, { policy, receipts: { get: (id) => receipts.get(`${deviceId}:${id}`), set: (id, value) => receipts.set(`${deviceId}:${id}`, value) },
+      authorize: () => {
+        if (!clients.has(client) || ws.readyState !== WebSocket.OPEN || !allowedDevice(deviceId) || !devices.allows(deviceId, 'write')) {
+          throw new Error('Write permission is disabled on Windows');
+        }
+      },
       write: (item) => { if (!allowedDevice(deviceId) || !devices.allows(deviceId, 'write')) throw new Error('Write permission is disabled on Windows'); return writeToClipboardFn(item); } });
     ws.send(JSON.stringify({ type: 'settings', settings: deviceSettings(deviceId) }));
     const remove = () => { if (clients.delete(client)) notify(disconnectCallbacks, deviceInfo(client)); };

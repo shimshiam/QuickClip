@@ -18,7 +18,7 @@
   let expectingBinary = null; // { type, size, meta }
   const clipboardItems = [];
   const fileItems = [];
-  let settings = { syncText: true, syncImages: true, syncFiles: true, paused: false,
+  let settings = { canView: false, syncText: false, syncImages: false, syncFiles: false, paused: false,
     clipboardTtlMinutes: 15, fileTtlHours: 24, maxHistory: 50, maxTextBytes: 1048576, maxImageBytes: 20971520 };
   let sending = false;
   let readingClipboard = false;
@@ -84,7 +84,9 @@
 
   async function loadConnectionInfo() {
     const params = new URLSearchParams(window.location.hash.slice(1));
-    const invitation = params.get('invitation');
+    const scannedInvitation = params.get('invitation');
+    if (scannedInvitation) sessionStorage.setItem('quickclip_pending_invitation', scannedInvitation);
+    const invitation = scannedInvitation || sessionStorage.getItem('quickclip_pending_invitation');
     serverIp = window.location.hostname;
     serverPort = window.location.port || '8443';
     window.history.replaceState({}, '', window.location.pathname);
@@ -92,13 +94,39 @@
     localStorage.removeItem('quickclip_token');
     if (invitation) {
       try {
+        const pair = async (passcode) => {
         const response = await fetch('/api/pair', { method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ invitation, name: /iPhone|iPad/.test(navigator.userAgent) ? 'iPhone / iPad' : 'Browser' }) });
+          body: JSON.stringify({ invitation, passcode, name: /iPhone|iPad/.test(navigator.userAgent) ? 'iPhone / iPad' : 'Browser' }) });
         const result = await response.json();
+        if (result.passcodeRequired) return result;
         if (!response.ok) throw new Error(result.error || 'Pairing failed');
+        return result;
+        };
+        let result = await pair();
+        if (result.passcodeRequired) {
+          overlayStatus.textContent = 'Password required to join';
+          $('.overlay-title').textContent = 'Join QuickClip';
+          const form = $('#pairing-form'), input = $('#pairing-passcode');
+          form.hidden = false;
+          overlay.classList.remove('hidden');
+          result = await new Promise(resolve => {
+            form.onsubmit = async (event) => {
+              event.preventDefault();
+              const button = form.querySelector('button');
+              button.disabled = true;
+              try {
+                const attempt = await pair(input.value);
+                if (attempt.passcodeRequired) { $('#pairing-error').textContent = attempt.error || 'Enter your password'; input.select(); }
+                else { form.hidden = true; input.value = ''; resolve(attempt); }
+              } catch (err) { $('#pairing-error').textContent = err.message; }
+              finally { button.disabled = false; }
+            };
+          });
+        }
         authToken = result.token;
         localStorage.setItem('quickclip_device_token', authToken);
+        sessionStorage.removeItem('quickclip_pending_invitation');
       } catch (err) { overlayStatus.textContent = err.message; return false; }
     }
     return true;
@@ -129,6 +157,7 @@
     }
 
     overlayStatus.textContent = `Connecting to ${serverIp}:${serverPort}…`;
+    $('.overlay-title').textContent = 'Connecting to QuickClip';
 
     try {
       ws = new WebSocket(`wss://${serverIp}:${serverPort}?token=${authToken}`);
@@ -139,34 +168,38 @@
       return;
     }
 
+    const socket = ws;
+
     // Timeout: if TLS handshake or connection hangs for 10s, force reconnect
     const connectTimeout = setTimeout(() => {
-      if (ws && ws.readyState === WebSocket.CONNECTING) {
+      if (ws === socket && socket.readyState === WebSocket.CONNECTING) {
         console.warn('WebSocket connection timed out — retrying');
-        try { ws.close(); } catch (_) { /* ignore */ }
+        try { socket.close(); } catch (_) { /* ignore */ }
       }
     }, 10000);
 
     ws.onopen = () => {
       clearTimeout(connectTimeout);
+      if (ws !== socket) return;
       connected = true;
       reconnectDelay = 1000;
       updateConnectionUI(true);
       startPingLoop();
-      fetchInitialState();
     };
 
     ws.onclose = (event) => {
       clearTimeout(connectTimeout);
+      if (ws !== socket) return;
       connected = false;
+      settings = { ...settings, canView: false, syncText: false, syncImages: false, syncFiles: false };
+      clearRemoteItems();
       updateConnectionUI(false);
       stopPingLoop();
       delivery.disconnect();
       expectingBinary = null;
 
-      if (event && event.code === 4004) clearRemoteItems();
       if (event && [4001, 4003].includes(event.code)) {
-        clearRemoteItems();
+        clearTimeout(reconnectTimer);
         if (event.code === 4001) { authToken = ''; localStorage.removeItem('quickclip_device_token'); }
         if (event.code === 4003) {
           clearTimeout(reconnectTimer);
@@ -178,7 +211,8 @@
         }
         return;
       } else if (event && event.code === 1006) {
-        overlayStatus.innerHTML = 'Connecting to server failed (`1006`).<br><br><span style="color:#ffd93d;font-size:0.9em">⚠️ <b>SSL Certificate Not Trusted</b><br>Safari blocks secure WebSockets if the CA certificate is not fully trusted.<br><br><b>To fix in iOS:</b><br>1. Download & Install <b>ca.crt</b><br>2. Go to <b>Settings → General → About → Certificate Trust Settings</b> and toggle <b>QuickClip CA</b> to <b>ON</b>.</span>';
+        scheduleReconnect('Connection lost. Check the PC address, shared Wi-Fi, firewall or guest-network isolation, and iPhone certificate trust.');
+        return;
       }
 
       scheduleReconnect();
@@ -189,6 +223,7 @@
     };
 
     ws.onmessage = (event) => {
+      if (ws !== socket) return;
       if (event.data instanceof ArrayBuffer) {
         handleBinaryMessage(event.data);
       } else {
@@ -209,23 +244,29 @@
       case 'transfer-result':
         delivery.receive(msg);
         break;
-      case 'settings':
+      case 'settings': {
+        const couldView = settings.canView;
         settings = { ...settings, ...msg.settings };
+        if (!settings.canView) clearRemoteItems();
+        else if (!couldView) fetchInitialState();
         while (clipboardItems.length > settings.maxHistory) releaseItem(clipboardItems.pop());
         renderClipboardList();
         updateConnectionUI(connected);
         break;
+      }
       case 'history-changed':
         historyRevision++;
         fetchInitialState();
         break;
       case 'clipboard-image-available':
+        if (!settings.canView) break;
         historyRevision++;
         addClipboardItem({ ...msg, type: 'image', url: msg.thumbnail });
         showToast('🖼️ Image received', 'success');
         notifyTab('clipboard');
         break;
       case 'clipboard-text':
+        if (!settings.canView) break;
         historyRevision++;
         addClipboardItem({ ...msg, type: 'text', timestamp: msg.timestamp || Date.now() });
         showToast('📋 Clipboard received', 'success');
@@ -233,11 +274,14 @@
         break;
 
       case 'clipboard-image':
+        if (!settings.canView) break;
         // Next binary frame will be the image data
         expectingBinary = { type: 'clipboard-image', size: msg.size };
         break;
 
       case 'file-available':
+        if (!settings.canView) break;
+        historyRevision++;
         addFileItem({ id: msg.id, name: msg.name, size: msg.size, timestamp: Date.now() });
         showToast(`📁 File: ${msg.name}`, 'success');
         notifyTab('files');
@@ -250,7 +294,7 @@
   }
 
   function handleBinaryMessage(buffer) {
-    if (expectingBinary && expectingBinary.type === 'clipboard-image') {
+    if (settings.canView && expectingBinary && expectingBinary.type === 'clipboard-image') {
       const blob = new Blob([buffer], { type: 'image/png' });
       const url = URL.createObjectURL(blob);
       addClipboardItem({ type: 'image', blob, url, timestamp: Date.now() });
@@ -260,9 +304,9 @@
     }
   }
 
-  function scheduleReconnect() {
+  function scheduleReconnect(reason = '') {
     clearTimeout(reconnectTimer);
-    overlayStatus.textContent = `Reconnecting in ${Math.round(reconnectDelay / 1000)}s…`;
+    overlayStatus.textContent = `${reason ? reason + ' ' : ''}Reconnecting in ${Math.round(reconnectDelay / 1000)}s…`;
     reconnectTimer = setTimeout(() => {
       connectWebSocket();
     }, reconnectDelay);
@@ -290,6 +334,7 @@
 
   // ─── Initial State Hydration ───
   async function fetchInitialState() {
+    if (!connected || !settings.canView) return;
     const request = ++historyRequest;
     const revision = historyRevision;
     const base = `https://${serverIp}:${serverPort}`;
@@ -298,6 +343,8 @@
     // Fetch clipboard history
     try {
       const res = await fetch(`${base}/api/history`, { headers });
+      if (request !== historyRequest) return;
+      if (res.status === 401 || res.status === 403) { clearRemoteItems(); return; }
       if (res.ok) {
         const history = await res.json();
         if (request !== historyRequest) return;
@@ -315,9 +362,12 @@
     // Fetch file list
     try {
       const res = await fetch(`${base}/api/files`, { headers });
+      if (request !== historyRequest) return;
+      if (res.status === 401 || res.status === 403) { clearRemoteItems(); return; }
       if (res.ok) {
         const files = await res.json();
         if (request !== historyRequest) return;
+        if (revision !== historyRevision) { fetchInitialState(); return; }
         fileItems.length = 0;
         renderFilesList();
         for (const file of files) {
@@ -601,7 +651,7 @@
            </svg>`;
 
       let previewHtml = item.type === 'image'
-        ? '<em style="color:var(--text-secondary)">Image payload</em>'
+        ? '<em class="image-description">Image payload</em>'
         : escapeHtml(item.content.substring(0, 150));
 
       el.innerHTML = `
@@ -888,9 +938,9 @@
   // ═══════════════════════════════════════════════════════
 
   async function init() {
+    registerServiceWorker();
     if (!await loadConnectionInfo()) return;
     bindEvents();
-    registerServiceWorker();
     startTimestampUpdater();
     connectWebSocket();
     initRipples();
@@ -898,6 +948,9 @@
   }
 
   // Boot
+  window.addEventListener('hashchange', () => {
+    if (new URLSearchParams(window.location.hash.slice(1)).has('invitation')) window.location.reload();
+  });
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', init);
   } else {

@@ -20,7 +20,7 @@
   <header id="app-header">
     <div class="header-content">
       <h1 class="header-title">QuickClip</h1>
-      <div style="display:flex;align-items:center;gap:10px;">
+      <div class="header-controls">
         <button class="theme-toggle" id="pwa-theme-toggle" aria-label="Toggle theme">
           <svg class="theme-icon theme-icon--sun" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="5"/>
@@ -159,6 +159,12 @@
       <div class="spinner"></div>
       <h2 class="overlay-title">Connecting to QuickClip</h2>
       <p class="overlay-sub" id="overlay-status">Looking for your PC on the network…</p>
+      <form id="pairing-form" hidden>
+        <label for="pairing-passcode">Enter the joining password set in the Windows app</label>
+        <input id="pairing-passcode" type="password" maxlength="128" autocomplete="current-password" required>
+        <button type="submit" class="btn">Join QuickClip</button>
+        <p id="pairing-error" role="alert"></p>
+      </form>
     </div>
   </div>
 

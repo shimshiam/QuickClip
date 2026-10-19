@@ -519,6 +519,9 @@ body::after {
 }
 
 /* ─── Item Cards (Inset Navy Panels) ─── */
+.header-controls { display: flex; align-items: center; gap: 10px; }
+.image-description { color: var(--text-secondary); }
+
 .item-card {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
@@ -752,14 +755,14 @@ body::after {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  opacity: 0;
-  pointer-events: none;
+  opacity: 1;
+  pointer-events: auto;
+  overflow-y: auto;
   transition: opacity var(--transition);
 }
 
-.connection-overlay.visible {
-  opacity: 1;
-  pointer-events: auto;
+.connection-overlay.hidden {
+  display: none;
 }
 
 .overlay-content {
@@ -796,6 +799,13 @@ body::after {
   color: var(--text-primary);
   margin-bottom: 6px;
 }
+
+#pairing-form { margin-top: 20px; width: 100%; }
+#pairing-form label { display: block; font-size: 0.9rem; }
+#pairing-passcode { box-sizing: border-box; width: 100%; margin: 12px 0; padding: 12px; font-size: 16px; text-align: left; color: var(--text-primary); background: var(--card-bg); border: 1px solid var(--text-secondary); border-radius: 8px; }
+#pairing-passcode:focus { outline: 2px solid var(--accent); outline-offset: 2px; }
+#pairing-error { margin-top: 12px; font-size: 0.85rem; }
+.overlay-content:has(#pairing-form:not([hidden])) .spinner { display: none; }
 
 .overlay-sub {
   font-size: 0.84rem;
