@@ -149,9 +149,10 @@ app.whenReady().then(async () => {
       const qr = await require('../src/main/network').generateQRCode(base, invitation.token);
       return qr;
     }, 'get-status': () => ({ ip: '127.0.0.1', port: 8443, deviceCount: 1 }),
-    'get-history': monitor.getHistory, 'get-files': () => [], 'get-settings': () => ({ ...policy.get(), hasPairingPassword: !!savedPasswordHash }),
+    'get-history': monitor.getHistory, 'get-files': () => fileManager.listFiles(), 'get-settings': () => ({ ...policy.get(), hasPairingPassword: !!savedPasswordHash }),
     'get-server-info': () => ({}),
-    'get-trusted-devices': () => server.devices.list(),
+    'get-trusted-devices': () => server.devices.list().map(device => ({ ...device,
+      connected: api.getConnectedDevices().some(client => client.deviceId === device.id) })),
     'set-device-permissions': (_event, id, patch) => server.devices.updatePermissions(id, patch),
     'revoke-device': (_event, id) => server.devices.revoke(id),
     'disconnect-all': () => server.devices.revokeAll(),
@@ -196,6 +197,37 @@ app.whenReady().then(async () => {
   await new Promise((resolve) => setTimeout(resolve, 600));
   fs.writeFileSync(path.join(out, 'security-settings.png'), (await desktop.webContents.capturePage()).toPNG());
   const deviceId = server.devices.list()[0].id;
+  // Documentation captures use the real renderers and isolated sample content.
+  monitor.clearHistory();
+  monitor.writeToClipboard({ type: 'text', content: 'Project notes\nReview the mockups and share the final files.' }, 'local');
+  api.broadcastClipboard(monitor.getHistory()[0]);
+  const sampleFile = fileManager.saveFile(Buffer.from('Review the mockups and share the final files.'), 'Project notes.txt');
+  api.broadcastFileAvailable(sampleFile);
+  await phone.reload();
+  await eventually(phone, "document.querySelector('#status-text').textContent === 'Connected' && document.body.textContent.includes('Project notes')");
+  await new Promise(resolve => setTimeout(resolve, 500));
+  fs.writeFileSync(path.join(out, 'phone-clipboard-current.png'), (await phone.webContents.capturePage()).toPNG());
+  await phone.webContents.executeJavaScript("document.querySelector('[data-tab=files]').click()");
+  await new Promise(resolve => setTimeout(resolve, 500));
+  fs.writeFileSync(path.join(out, 'phone-files-current.png'), (await phone.webContents.capturePage()).toPNG());
+  await phone.webContents.executeJavaScript("document.querySelector('[data-tab=clipboard]').click()");
+  desktop.setSize(720, 760);
+  await desktop.reload();
+  await eventually(desktop, "document.body.textContent.includes('Project notes')");
+  for (const tab of ['clipboard', 'files', 'settings']) {
+    if (tab === 'settings') desktop.setSize(620, 1180);
+    await desktop.webContents.executeJavaScript(`document.querySelector('[data-tab=${tab}]').click()`);
+    await new Promise(resolve => setTimeout(resolve, 600));
+    fs.writeFileSync(path.join(out, 'windows-' + tab + '-current.png'), (await desktop.webContents.capturePage()).toPNG());
+  }
+  desktop.setSize(520, 740);
+  await desktop.webContents.executeJavaScript("document.querySelector('[data-tab=pair]').click(); document.querySelector('.connection-badge').click()");
+  await new Promise(resolve => setTimeout(resolve, 600));
+  fs.writeFileSync(path.join(out, 'windows-devices-current.png'), (await desktop.webContents.capturePage()).toPNG());
+  await desktop.webContents.executeJavaScript("document.querySelector('#deviceDrawer').close(); document.querySelector('[data-tab=settings]').click()");
+  // Restore the image fixture needed by permission regression checks below.
+  monitor.writeToClipboard({ type: 'image', content: png }, 'local');
+  api.broadcastClipboard(monitor.getHistory()[0]);
   const permissions = patch => desktop.webContents.executeJavaScript(`window.quickclip.setDevicePermissions(${JSON.stringify(deviceId)}, ${JSON.stringify(patch)})`);
   await permissions({ view: false });
   await eventually(phone, "document.querySelectorAll('.item-card').length === 0 && document.querySelector('#status-text').textContent === 'Connected'");

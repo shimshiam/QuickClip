@@ -38,7 +38,7 @@ QuickClip runs an HTTPS and WebSocket server inside an Electron app on your Wind
 <p align="center">
   <img src="./assets/readme/windows-pairing-current.png" alt="Compact QuickClip Pair tab with QR code, optional joining password, server address, and setup instructions" width="520">
 </p>
-<p align="center"><sub>The compact Pair tab keeps the QR code, joining instructions, and password controls together. Pairing screenshots use an isolated test server; the pictured QR is no longer valid. Other desktop screenshots use sample device names, files, and a sample local address.</sub></p>
+<p align="center"><sub>The compact Pair tab keeps the QR code, joining instructions, and password controls together. Pairing screenshots use an isolated test server; the pictured QR is no longer valid. Clipboard, Files, Devices, and Settings screenshots also use the isolated test browser and sample content. Certificate setup images and recordings remain physical-device references.</sub></p>
 
 Scan the QR code after installing and trusting the certificate. With **Require password** off, the phone joins directly. To protect joining, turn it on, enter your own password, and select **Save** before scanning the new QR. The phone displays a password field and **Join QuickClip** button before receiving its device credential.
 
@@ -70,23 +70,23 @@ The phone stores its device credential locally and removes the invitation from t
 > GitHub may show the recordings as links instead of inline players. The linked files are the same demos stored in this repository.
 
 <p align="center">
-  <img src="./assets/readme/iphone-clipboard.jpg" alt="QuickClip on iPhone showing Connected status and a text clipboard-history item" width="360">
+  <img src="./assets/readme/phone-clipboard-current.png" alt="Current QuickClip phone layout showing Connected status and sample clipboard text" width="360">
 </p>
-<p align="center"><sub>The connected iPhone view provides an explicit Send Clipboard action and a Copy button for items received from Windows.</sub></p>
+<p align="center"><sub>Current phone layout captured in Chromium with sample text. Send Clipboard sends content to Windows; Copy copies a received item.</sub></p>
 
 <p align="center">
-  <img src="./assets/readme/windows-clipboard-history.png" alt="QuickClip desktop clipboard history containing text received from an iPhone" width="720">
+  <img src="./assets/readme/windows-clipboard-history.png" alt="Current Windows clipboard history with sample project notes" width="720">
 </p>
-<p align="center"><sub>On Windows, received text is recorded in the current session's clipboard history and marked with its source device.</sub></p>
+<p align="center"><sub>The current Windows clipboard view displays sample project notes. History is session-only and entries identify their source.</sub></p>
 
 Browser clipboard access requires a user action on iOS, so the phone cannot silently monitor or replace the system clipboard in the background. Tap **Send Clipboard** or **Copy** when moving content through the phone.
 
 ### Transfer files
 
 <p align="center">
-  <img src="./assets/readme/iphone-files.jpg" alt="QuickClip Files tab on iPhone with the file picker and shared-file list" width="360">
+  <img src="./assets/readme/phone-files-current.png" alt="Current phone Files tab with Send File and a shared sample text file" width="360">
 </p>
-<p align="center"><sub>The iPhone Files tab can choose an item from Photos, the camera, Files, or another provider and send it directly to the Windows PC.</sub></p>
+<p align="center"><sub>Current phone Files layout captured in Chromium. Send File opens the device file picker; Save downloads a shared file. On iPhone, the picker can offer Photos, the camera, Files, and other providers.</sub></p>
 
 Files uploaded from the phone are stored under QuickClip's per-user `runtime/received` directory. Files selected on Windows are copied into the same managed directory and announced to connected phones, where **Save** requests a short-lived download link.
 
@@ -100,7 +100,7 @@ Files uploaded from the phone are stored under QuickClip's per-user `runtime/rec
 Click the connection badge in the top-right corner to open **Devices**. Each paired device shows its connection state and separate **Access**, **View**, and **Write** controls. The same permissions are available under **Settings > Security**.
 
 <p align="center">
-  <img src="./assets/readme/windows-device-permissions.png" alt="Devices panel showing connected iPhone and offline iPad with Access, View, Write, and Remove controls" width="520">
+  <img src="./assets/readme/windows-device-permissions.png" alt="Current Devices panel showing the connected test browser and permission controls" width="520">
 </p>
 <p align="center"><sub>Allow a device to view shared content, send content to Windows, or do both. Turn off Access to block it while keeping its pairing, or choose Remove to require pairing again.</sub></p>
 
