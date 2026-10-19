@@ -1,5 +1,5 @@
 // QuickClip Service Worker v3
-const CACHE_NAME = 'quickclip-v3';
+const CACHE_NAME = 'quickclip-v4';
 const APP_SHELL = [
   '/',
   '/index.html',

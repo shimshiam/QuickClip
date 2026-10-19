@@ -111,7 +111,8 @@
           </div>
         </div>
 
-        <div class="server-url-wrap" id="serverUrlWrap" title="Click to copy server URL">
+        <p class="settings-desc">This QR code pairs one device and expires in five minutes. Generate another in Settings.</p>
+      <div class="server-url-wrap" id="serverUrlWrap" title="Click to copy server URL">
           <span class="server-url" id="serverUrl">https://192.168.1.100:8443</span>
           <svg class="copy-url-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
@@ -292,14 +293,17 @@
       <div class="settings-group">
         <div class="settings-row">
           <div class="settings-label">
-            <span class="settings-title">Pairing Token</span>
-            <span class="settings-desc">Secret authentication key required for device connection</span>
+            <span class="settings-title">Trusted devices</span>
+            <span class="settings-desc">QR codes work once and expire after five minutes. Disconnect all removes every device and requires pairing again.</span>
           </div>
-          <div class="token-box">
-            <input type="password" class="token-input" id="settingToken" readonly value="••••••••••••" />
-          </div>
-          <button class="btn btn-ghost btn-sm" id="copyTokenBtn">Copy Token</button>
         </div>
+        <div class="settings-row"><button class="btn btn-ghost btn-sm" id="newPairingBtn">New pairing code</button><button class="btn btn-ghost btn-sm" id="disconnectAllBtn">Disconnect all</button></div>
+        <div id="trustedDevices" aria-live="polite"></div>
+        <div class="settings-row"><div class="settings-label"><label class="settings-title" for="settingRemoteAccess">Allow remote access</label><span class="settings-desc">Turn off to disconnect devices and block remote reads and writes. Pausing sync only stops new transfers.</span></div><label class="apple-switch"><input type="checkbox" id="settingRemoteAccess" checked><span class="switch-slider"></span></label></div>
+        <div class="settings-row"><label class="settings-label" for="settingClipboardTtl">Clipboard expiry (minutes)</label><input class="settings-input" type="number" id="settingClipboardTtl" min="1" max="1440" value="15"></div>
+        <div class="settings-row"><label class="settings-label" for="settingFileTtl">File sharing expiry (hours)</label><input class="settings-input" type="number" id="settingFileTtl" min="1" max="720" value="24"></div>
+        <div class="settings-row"><label class="settings-label" for="settingStorageQuota">Shared storage limit (MB)</label><input class="settings-input" type="number" id="settingStorageQuota" min="500" max="102400" value="2048"></div>
+        <p class="settings-desc" style="padding: 0 18px 16px;">Expired file shares remain saved on Windows. Delete saved copies in Files to reclaim space. Executables, scripts, shortcuts and macro-enabled documents are blocked. Up to two uploads can run at once, with a 500 MB limit per file.</p>
       </div>
     </section>
 

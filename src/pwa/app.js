@@ -19,7 +19,7 @@
   const clipboardItems = [];
   const fileItems = [];
   let settings = { syncText: true, syncImages: true, syncFiles: true, paused: false,
-    maxHistory: 50, maxTextBytes: 1048576, maxImageBytes: 20971520 };
+    clipboardTtlMinutes: 15, fileTtlHours: 24, maxHistory: 50, maxTextBytes: 1048576, maxImageBytes: 20971520 };
   let sending = false;
   let readingClipboard = false;
   let historyRequest = 0;
@@ -82,34 +82,34 @@
   // Connection Management
   // ═══════════════════════════════════════════════════════
 
-  function loadConnectionInfo() {
-    // Check URL params first (from QR code scan or Home Screen bookmark)
-    const params = new URLSearchParams(window.location.hash.slice(1) || window.location.search);
-    const ip = params.get('ip');
-    const port = params.get('port');
-    const token = params.get('token');
-
-    if (ip && port && token) {
-      serverIp = ip;
-      serverPort = port;
-      authToken = token;
-      localStorage.setItem('quickclip_server', JSON.stringify({ ip, port }));
-      localStorage.setItem('quickclip_token', token);
-      window.history.replaceState({}, '', window.location.pathname);
-    } else {
-      // Fall back to localStorage, then window.location
-      try {
-        const saved = JSON.parse(localStorage.getItem('quickclip_server') || '{}');
-        serverIp = saved.ip || window.location.hostname || '';
-        serverPort = saved.port || window.location.port || '8443';
-      } catch {
-        serverIp = window.location.hostname || '';
-        serverPort = window.location.port || '8443';
-      }
-      authToken = localStorage.getItem('quickclip_token') || '';
-    }
+  async function loadConnectionInfo() {
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    const invitation = params.get('invitation');
     serverIp = window.location.hostname;
     serverPort = window.location.port || '8443';
+    window.history.replaceState({}, '', window.location.pathname);
+    authToken = localStorage.getItem('quickclip_device_token') || '';
+    localStorage.removeItem('quickclip_token');
+    if (invitation) {
+      try {
+        const response = await fetch('/api/pair', { method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ invitation, name: /iPhone|iPad/.test(navigator.userAgent) ? 'iPhone / iPad' : 'Browser' }) });
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || 'Pairing failed');
+        authToken = result.token;
+        localStorage.setItem('quickclip_device_token', authToken);
+      } catch (err) { overlayStatus.textContent = err.message; return false; }
+    }
+    return true;
+  }
+
+  function clearRemoteItems() {
+    historyRequest++;
+    clipboardItems.forEach(releaseItem);
+    clipboardItems.length = 0;
+    fileItems.length = 0;
+    renderClipboardList(); renderFilesList();
   }
 
   function connectWebSocket() {
@@ -164,9 +164,11 @@
       delivery.disconnect();
       expectingBinary = null;
 
-      if (event && event.code === 4001) {
-        overlayStatus.innerHTML = '<span style="color:#ff6b6b">Pairing token mismatch.</span><br>Please re-scan the QR code on your Windows app.';
-        return; // Do not auto-reconnect if unauthorized
+      if (event && [4001, 4003].includes(event.code)) {
+        clearRemoteItems();
+        if (event.code === 4001) { authToken = ''; localStorage.removeItem('quickclip_device_token'); }
+        overlayStatus.textContent = event.code === 4003 ? 'Remote access is blocked on Windows. Enable it there, then reload this page.' : 'Device access was removed. Generate a new pairing code on Windows.';
+        return;
       } else if (event && event.code === 1006) {
         overlayStatus.innerHTML = 'Connecting to server failed (`1006`).<br><br><span style="color:#ffd93d;font-size:0.9em">⚠️ <b>SSL Certificate Not Trusted</b><br>Safari blocks secure WebSockets if the CA certificate is not fully trusted.<br><br><b>To fix in iOS:</b><br>1. Download & Install <b>ca.crt</b><br>2. Go to <b>Settings → General → About → Certificate Trust Settings</b> and toggle <b>QuickClip CA</b> to <b>ON</b>.</span>';
       }
@@ -301,11 +303,15 @@
       console.warn('Failed to fetch clipboard history:', err);
     }
 
+    if (request !== historyRequest) return;
     // Fetch file list
     try {
       const res = await fetch(`${base}/api/files`, { headers });
       if (res.ok) {
         const files = await res.json();
+        if (request !== historyRequest) return;
+        fileItems.length = 0;
+        renderFilesList();
         for (const file of files) {
           addFileItem({
             id: file.id,
@@ -609,6 +615,7 @@
   function renderFilesList() {
     filesCount.textContent = fileItems.length;
 
+    filesList.querySelectorAll('.item-card, .file-item').forEach(el => el.remove());
     if (fileItems.length === 0) {
       filesEmpty.style.display = '';
       return;
@@ -733,12 +740,25 @@
   }
 
   // Keep timestamps live
+  function pruneExpiredItems() {
+    const now = Date.now();
+    const before = clipboardItems.length + fileItems.length;
+    for (let i = clipboardItems.length - 1; i >= 0; i--) {
+      if (clipboardItems[i].timestamp + settings.clipboardTtlMinutes * 60000 <= now) releaseItem(clipboardItems.splice(i, 1)[0]);
+    }
+    for (let i = fileItems.length - 1; i >= 0; i--) {
+      if (fileItems[i].timestamp + settings.fileTtlHours * 3600000 <= now) fileItems.splice(i, 1);
+    }
+    if (before !== clipboardItems.length + fileItems.length) { renderClipboardList(); renderFilesList(); }
+  }
   function startTimestampUpdater() {
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) pruneExpiredItems(); });
     setInterval(() => {
+      pruneExpiredItems();
       document.querySelectorAll('.item-time').forEach((el) => {
         el.textContent = formatTime(Number(el.dataset.timestamp));
       });
-    }, 30000);
+    }, 5000);
   }
 
   // ═══════════════════════════════════════════════════════
@@ -859,8 +879,8 @@
   // Init
   // ═══════════════════════════════════════════════════════
 
-  function init() {
-    loadConnectionInfo();
+  async function init() {
+    if (!await loadConnectionInfo()) return;
     bindEvents();
     registerServiceWorker();
     startTimestampUpdater();

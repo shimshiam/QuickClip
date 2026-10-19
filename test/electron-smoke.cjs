@@ -48,7 +48,7 @@ app.whenReady().then(async () => {
   assert.equal(monitor.getHistory().length, 2);
   monitor.clearHistory(); image = nativeImage.createEmpty(); pollClipboard();
   const cert = await generateCertificates(root, '127.0.0.1');
-  server = api.createServer(cert, { port: 0, dataDir: root, token: 'smoke-token', fileManager,
+  server = api.createServer(cert, { port: 0, dataDir: root, fileManager,
     policy, getHistoryFn: monitor.getHistory, getImagePathFn: monitor.getImagePath, writeToClipboardFn: monitor.writeToClipboard });
   await once(server.httpsServer, 'listening');
   const base = `https://127.0.0.1:${server.httpsServer.address().port}`;
@@ -57,7 +57,7 @@ app.whenReady().then(async () => {
   isolatedSession.setCertificateVerifyProc((request, callback) => callback(request.hostname === '127.0.0.1' ? 0 : -3));
   phone = new BrowserWindow({ show: false, width: 390, height: 844, webPreferences: { session: isolatedSession, backgroundThrottling: false } });
   phone.webContents.on('console-message', (_event, level, message) => { if (level >= 3) errors.push(message); });
-  await phone.loadURL(`${base}/#ip=127.0.0.1&port=${server.httpsServer.address().port}&token=smoke-token`);
+  await phone.loadURL(`${base}/#ip=127.0.0.1&port=${server.httpsServer.address().port}&invitation=${server.devices.invite().token}`);
   await eventually(phone, "document.querySelector('#status-text').textContent === 'Connected'");
   await phone.webContents.executeJavaScript(`
     window.smokeCopied = null;
@@ -102,15 +102,18 @@ app.whenReady().then(async () => {
 
   // Desktop exercises the production preload and renderer with an isolated IPC backend.
   const handlers = {
-    'get-qr-code': () => '', 'get-status': () => ({ ip: '127.0.0.1', port: 8443, deviceCount: 1 }),
+    'get-qr-code': () => require('../src/main/network').generateQRCode(base, server.devices.invite().token), 'get-status': () => ({ ip: '127.0.0.1', port: 8443, deviceCount: 1 }),
     'get-history': monitor.getHistory, 'get-files': () => [], 'get-settings': policy.get,
-    'get-server-info': () => ({ token: 'smoke-token' }),
+    'get-server-info': () => ({}),
+    'get-trusted-devices': () => server.devices.list(),
+    'revoke-device': (_event, id) => server.devices.revoke(id),
+    'disconnect-all': () => server.devices.revokeAll(),
     'copy-history-item': (_event, id) => monitor.copyHistoryItem(id),
-    'update-settings': (_event, settings) => { policy.update(settings); monitor.trimHistory(); return true; },
+    'update-settings': (_event, settings) => { policy.update(settings); server.enforceAccess(); monitor.trimHistory(); return true; },
   };
   for (const [name, handler] of Object.entries(handlers)) ipcMain.handle(name, handler);
   desktop = new BrowserWindow({ show: false, width: 520, height: 740, webPreferences: {
-    preload: path.resolve(__dirname, '../src/main/preload.js'), contextIsolation: true, nodeIntegration: false, backgroundThrottling: false,
+    offscreen: true, preload: path.resolve(__dirname, '../src/main/preload.js'), contextIsolation: true, nodeIntegration: false, backgroundThrottling: false,
   } });
   desktop.webContents.on('console-message', (_event, level, message) => { if (level >= 3) errors.push(message); });
   await desktop.loadFile(path.resolve(__dirname, '../src/renderer/index.html'));
@@ -124,8 +127,23 @@ app.whenReady().then(async () => {
   const out = path.resolve(__dirname, '../.test-output'); fs.mkdirSync(out, { recursive: true });
   fs.writeFileSync(path.join(out, 'phone.png'), (await phone.webContents.capturePage()).toPNG());
   fs.writeFileSync(path.join(out, 'desktop.png'), (await desktop.webContents.capturePage()).toPNG());
+  await desktop.webContents.executeJavaScript("document.querySelector('[data-tab=settings]').click()");
+  await eventually(desktop, "document.querySelector('#trustedDevices').textContent.includes('Revoke')");
+  await eventually(desktop, "document.querySelector('#panel-settings').classList.contains('active')");
+  await desktop.webContents.executeJavaScript("document.querySelector('#trustedDevices').scrollIntoView({block:'start'})");
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  fs.writeFileSync(path.join(out, 'security-settings.png'), (await desktop.webContents.capturePage()).toPNG());
+  await desktop.webContents.executeJavaScript("document.querySelector('#settingRemoteAccess').click()");
+  await eventually(phone, "document.body.textContent.includes('Remote access is blocked on Windows')");
+  assert.equal(await phone.webContents.executeJavaScript("document.querySelectorAll('.item-card').length"), 0);
+  await desktop.webContents.executeJavaScript("document.querySelector('#settingRemoteAccess').click()");
+  await phone.reload();
+  await eventually(phone, "document.querySelector('#status-text').textContent === 'Connected'");
+  await desktop.webContents.executeJavaScript("document.querySelector('#trustedDevices button').click()");
+  await eventually(phone, "document.body.textContent.includes('Device access was removed')");
+  assert.equal(await phone.webContents.executeJavaScript("localStorage.getItem('quickclip_device_token')"), null);
   assert.deepEqual(errors, []);
-  console.log('PASS: native pixel change detection and PNG decoding, phone text/image acknowledgements, full-resolution Copy, pause/resume, reload hydration, desktop preload and Copy.');
+  console.log('PASS: native pixel change detection and PNG decoding, phone text/image acknowledgements, full-resolution Copy, pause/resume, reload hydration, desktop preload and Copy, pairing, remote-access blocking, reenabling, and device revocation.');
 }).then(() => finish(0), (err) => { console.error(err); finish(1); });
 
 function finish(code) {

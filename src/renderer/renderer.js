@@ -114,6 +114,10 @@
   async function loadQRCode() {
     try {
       const qrDataUrl = await window.quickclip.getQRCode();
+      if (!qrDataUrl) {
+        dom.qrImage.removeAttribute('src'); dom.qrImage.classList.remove('loaded');
+        showToast('Enable remote access in Settings to generate a pairing code', 'error');
+      }
       if (qrDataUrl && dom.qrImage) {
         dom.qrImage.src = qrDataUrl;
         dom.qrImage.classList.add('loaded');
@@ -168,8 +172,11 @@
       if (settings && dom.settingSyncFiles) dom.settingSyncFiles.checked = settings.syncFiles !== false;
       if (settings && dom.settingMaxHistory) dom.settingMaxHistory.value = settings.maxHistory || 50;
 
-      const info = await window.quickclip.getServerInfo();
-      if (info && info.token && dom.settingToken) dom.settingToken.value = info.token;
+      $('#settingRemoteAccess').checked = settings.remoteAccess !== false;
+      $('#settingClipboardTtl').value = settings.clipboardTtlMinutes || 15;
+      $('#settingFileTtl').value = settings.fileTtlHours || 24;
+      $('#settingStorageQuota').value = settings.storageQuotaMB || 2048;
+      await refreshDevices();
     } catch (err) {
       console.error('Failed to refresh settings:', err);
     }
@@ -178,6 +185,10 @@
   async function saveSettings() {
     try {
       const updated = {
+        remoteAccess: $('#settingRemoteAccess').checked,
+        clipboardTtlMinutes: Number($('#settingClipboardTtl').value),
+        fileTtlHours: Number($('#settingFileTtl').value),
+        storageQuotaMB: Number($('#settingStorageQuota').value),
         syncText: dom.settingSyncText ? dom.settingSyncText.checked : true,
         syncImages: dom.settingSyncImages ? dom.settingSyncImages.checked : true,
         syncFiles: dom.settingSyncFiles ? dom.settingSyncFiles.checked : true,
@@ -198,15 +209,34 @@
   if (dom.settingSyncFiles) dom.settingSyncFiles.addEventListener('change', saveSettings);
   if (dom.settingMaxHistory) dom.settingMaxHistory.addEventListener('change', saveSettings);
 
-  if (dom.copyTokenBtn) {
-    dom.copyTokenBtn.addEventListener('click', () => {
-      const token = dom.settingToken ? dom.settingToken.value : '';
-      if (token && token !== '••••••••••••') {
-        navigator.clipboard.writeText(token);
-        showToast('Token copied to clipboard!');
-      }
-    });
+  async function refreshDevices() {
+    const container = $('#trustedDevices');
+    const devices = await window.quickclip.getTrustedDevices();
+    container.replaceChildren();
+    if (!devices.length) container.textContent = 'No trusted devices';
+    for (const device of devices) {
+      const row = document.createElement('div'); row.className = 'settings-row';
+      const label = document.createElement('span'); label.textContent = device.name + ' · ' + new Date(device.pairedAt).toLocaleString();
+      const button = document.createElement('button'); button.className = 'btn btn-ghost btn-sm'; button.textContent = 'Revoke';
+      button.addEventListener('click', async () => {
+        try { await window.quickclip.revokeDevice(device.id); await refreshDevices(); await refreshStatus(); }
+        catch (_) { showToast('Could not revoke device', 'error'); }
+      });
+      row.append(label, button); container.append(row);
+    }
   }
+  for (const id of ['settingRemoteAccess', 'settingClipboardTtl', 'settingFileTtl', 'settingStorageQuota']) {
+    $('#' + id).addEventListener('change', saveSettings);
+  }
+  $('#newPairingBtn').addEventListener('click', async () => { await loadQRCode(); switchTab('pair'); });
+  $('#disconnectAllBtn').addEventListener('click', async () => {
+    try {
+      await window.quickclip.disconnectAll();
+      dom.qrImage.removeAttribute('src'); dom.qrImage.classList.remove('loaded');
+      await refreshDevices(); await refreshStatus();
+      showToast('All devices removed. Generate a new code to pair again.');
+    } catch (_) { showToast('Could not disconnect devices', 'error'); }
+  });
 
   // ---------- Relative Time ----------
   function relativeTime(dateStr) {
@@ -401,13 +431,21 @@
     `;
 
     el.querySelector('.file-open-btn').addEventListener('click', () => {
-      window.quickclip.openFile(file.path || file.id);
+      window.quickclip.openFile(file.path || file.id).then((ok) => { if (!ok) showToast('File could not be opened or is blocked for safety', 'error'); });
     });
 
     el.querySelector('.file-folder-btn').addEventListener('click', () => {
       window.quickclip.showInExplorer(file.path || file.id);
     });
 
+    const remove = document.createElement('button');
+    remove.className = 'btn btn-ghost btn-sm'; remove.textContent = 'Delete saved copy';
+    remove.addEventListener('click', async () => {
+      if (!window.confirm('Delete the QuickClip saved copy? The original source file will not be deleted.')) return;
+      try { await window.quickclip.deleteFile(file.id); await refreshFiles(); }
+      catch (_) { showToast('Could not delete saved copy', 'error'); }
+    });
+    el.append(remove);
     return el;
   }
 
@@ -586,6 +624,8 @@
     statusInterval = setInterval(() => {
       refreshStatus();
       refreshFiles();
+      refreshHistory();
+      refreshDevices();
     }, 5000);
   }
 
