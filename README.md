@@ -22,6 +22,7 @@ QuickClip runs an HTTPS and WebSocket server inside an Electron app on your Wind
 - Keeps a session-only clipboard history and a persistent shared-file list.
 - Encrypts traffic in transit with a locally generated CA and server certificate.
 - Pairs each phone using a single-use QR invitation that expires after five minutes, then issues a separate revocable device credential.
+- Offers optional password-protected joining with a password you choose on Windows.
 - Provides per-device Access, View, and Write controls from the connection badge and Settings, with individual device removal and a disconnect-all action.
 - Confirms clipboard delivery and supports retries when a receipt does not arrive.
 - Lets you copy or clear clipboard history, sort files by date, name, or size, open saved files, reveal them in Explorer, and delete managed copies.
@@ -35,11 +36,18 @@ QuickClip runs an HTTPS and WebSocket server inside an Electron app on your Wind
 ### Pair from Windows
 
 <p align="center">
-  <img src="./assets/readme/windows-pairing-current.png" alt="QuickClip desktop Pair tab with Create pairing code, server address, certificate download, and setup instructions" width="520">
+  <img src="./assets/readme/windows-pairing-current.png" alt="Compact QuickClip Pair tab with QR code, optional joining password, server address, and setup instructions" width="520">
 </p>
-<p align="center"><sub>The Pair tab creates a single-use invitation on demand. Desktop screenshots of Pair, Devices, Settings, and Files use sample device names, files, and a sample local address.</sub></p>
+<p align="center"><sub>The compact Pair tab keeps the QR code, joining instructions, and password controls together. Pairing screenshots use an isolated test server; the pictured QR is no longer valid. Other desktop screenshots use sample device names, files, and a sample local address.</sub></p>
 
-Scan the QR code after installing and trusting the certificate. The phone exchanges the invitation for its own credential, stores that credential locally, and removes the invitation from the visible URL.
+Scan the QR code after installing and trusting the certificate. With **Require password** off, the phone joins directly. To protect joining, turn it on, enter your own password, and select **Save** before scanning the new QR. The phone displays a password field and **Join QuickClip** button before receiving its device credential.
+
+<p align="center">
+  <img src="./assets/readme/phone-joining-password.png" alt="QuickClip phone password dialog with a visible password field and Join QuickClip button" width="330">
+</p>
+<p align="center"><sub>Phone layout captured in an isolated Chromium test window. Tap the field to open the keyboard. Incorrect passwords show an error without joining.</sub></p>
+
+The phone stores its device credential locally and removes the invitation from the visible URL. A pending invitation survives a page refresh in the same tab. Opening a new QR link in an existing tab restarts pairing.
 
 ### Clipboard in both directions
 
@@ -108,8 +116,8 @@ Click the connection badge in the top-right corner to open **Devices**. Each pai
 
 <table>
   <tr>
-    <td width="50%"><img src="./assets/readme/windows-pairing-light-redacted.png" alt="QuickClip Pair tab in light mode with its QR code redacted"></td>
-    <td width="50%"><img src="./assets/readme/windows-pairing-dark-redacted.png" alt="QuickClip Pair tab in dark mode with its QR code redacted"></td>
+    <td width="50%"><img src="./assets/readme/windows-pairing-current.png" alt="QuickClip Pair tab in light mode with optional password protection"></td>
+    <td width="50%"><img src="./assets/readme/windows-pairing-dark-current.png" alt="QuickClip Pair tab in dark mode with optional password protection"></td>
   </tr>
   <tr>
     <td><sub>Light mode keeps the pairing controls and setup checklist visible against a bright desktop theme.</sub></td>
@@ -161,7 +169,7 @@ flowchart LR
 ```
 
 1. **Startup:** Electron migrates legacy data when needed, loads trusted-device credential hashes and settings, chooses a local IPv4 address, creates or reuses TLS certificates, and starts Express and WebSocket on port `8443`. The service is also advertised over Bonjour/mDNS.
-2. **Pairing:** The desktop QR code contains the HTTPS address and a single-use invitation in the URL fragment. The phone exchanges it at `/api/pair` for a device credential, removes the fragment and uses the credential for authenticated API calls and the WebSocket handshake. Only hashes of device credentials are stored on Windows.
+2. **Pairing:** The desktop QR code contains the HTTPS address and a single-use invitation in the URL fragment. The phone exchanges it at `/api/pair` for a device credential, removes the fragment and uses the credential for authenticated API calls and the WebSocket handshake. Password-protected invitations require the saved joining password before issuing a credential. Windows stores only device credential hashes and a salted scrypt hash of the joining password; the password is never embedded in the QR code.
 3. **Windows to iPhone clipboard:** The Windows clipboard monitor polls for changes, records accepted text or images in session history, and broadcasts a WebSocket event. Disabled image sync skips image reads. Eligible images are checked using pixel fingerprints, with PNG encoding only when pixels or dimensions change; oversized dimensions are rejected first. Text travels in the event; image history sends metadata and a thumbnail, while full-resolution image data is fetched only when the phone copies it.
 4. **iPhone to Windows clipboard:** A tap on **Send Clipboard** lets the browser read text or an image. The PWA sends a transfer ID and payload over WebSocket. Windows validates the active settings and size limits, writes the system clipboard, records the item, and returns a receipt. Unconfirmed clipboard transfers can be retried for five minutes without intentionally duplicating a receipt already accepted in the current Windows session.
 5. **Files:** Phone uploads use authenticated HTTPS and stream into managed temporary storage before being moved into `runtime/received`. Files chosen on Windows are copied into that directory. Connected devices receive a WebSocket availability event; downloads use file-scoped tickets that expire after 60 seconds.
@@ -172,7 +180,7 @@ QuickClip uses TLS between the phone and PC and does not require a cloud service
 ## Requirements
 
 - Windows 10 or Windows 11, 64-bit
-- Node.js 18 or newer
+- Node.js 22.12 or newer
 - Git, if cloning instead of downloading the repository as an archive
 - A Windows PC and iPhone on the same Wi-Fi network
 - A network that allows devices to communicate with each other; guest networks and AP/client isolation usually block QuickClip
@@ -227,7 +235,7 @@ Open **Settings > General > About > Certificate Trust Settings**. Under **Enable
 
 ### 4. Scan and connect
 
-Return to the Windows **Pair** tab, select **Create pairing code**, and scan the QR code with the iPhone camera within five minutes. Open the link and wait for **Connected**. In Safari, use **Share > Add to Home Screen** if you want QuickClip to launch like an app.
+Return to the Windows **Pair** tab. Leave **Require password** off for QR-only joining, or turn it on, enter a password, and select **Save**. Select **Create pairing code** if no code is displayed, then scan it with the iPhone camera within five minutes. If prompted, enter the password you saved on Windows and tap **Join QuickClip**. Wait for **Connected**. In Safari, use **Share > Add to Home Screen** if you want QuickClip to launch like an app.
 
 > [!TIP]
 > If **Connecting...** persistently remains on screen in Safari after the certificate is installed and trusted, open the pairing link in **Chrome on the iPhone** instead.
@@ -258,11 +266,13 @@ QuickClip stores runtime data in `app.getPath('userData')/runtime`, normally `%A
 
 When migrating from the older project-level `data/` directory, QuickClip copies and verifies the data before activating the new location. The original directory is retained as a recovery copy. Clipboard history is session-only; associated image files are removed as entries expire, history is cleared, or the app exits. Received files persist.
 
-At startup, QuickClip renews the server certificate if it expires within 30 days, has already expired, or the selected IP has changed. It keeps the existing CA certificate and key, so routine renewal does not require reinstalling the iPhone profile. Renewal checks run at startup; they do not restore trust if iOS has disabled the installed profile.
+At startup, QuickClip renews the server certificate if it expires within 30 days, has already expired, or the selected IP has changed. It keeps the existing CA certificate and key, so routine renewal does not require reinstalling the iPhone profile. Startup also checks the certificate signature, IP address, and matching private key, and refuses invalid or incomplete CA material instead of silently replacing the trusted CA. Certificate storage permissions are restricted before keys are read or generated. Renewal checks run at startup; they do not restore trust if iOS has disabled the installed profile.
 
 ### Pairing, privacy and storage controls
 
 In the Windows Pair tab, select **Create pairing code**, or select **New pairing code** in Settings, then scan it within five minutes. Each code works once; generating another invalidates the previous code. Up to 20 devices can be trusted. **Remove** revokes one device's credential. **Disconnect all** removes all trusted devices and invalidates the current invitation. These actions close connections and invalidate the affected download links and active requests.
+
+**Joining password:** choose 1–128 characters, including letters, spaces, and symbols. The preference and password hash persist across restarts. Leave the password field blank to keep the saved password, or enter a replacement and select **Save**. Saving a new password or changing the requirement invalidates the previous QR and creates a fresh one. Five incorrect attempts invalidate an invitation; create another code to try again. Existing trusted devices keep their credentials, so changing the joining password does not sign them out. Use **Remove** or **Disconnect all** to revoke access.
 
 Each paired device has three permissions, saved across app restarts:
 
@@ -272,9 +282,9 @@ Each paired device has three permissions, saved across app restarts:
 | **View (V)** | Allows clipboard history, shared-file lists, downloads, and live content updates | Blocks those reads and updates; Write can remain enabled |
 | **Write (W)** | Allows clipboard submissions and file uploads to Windows, subject to sync settings | Blocks submissions and uploads; View can remain enabled |
 
-Permission changes disconnect the affected device, cancel its active requests, and invalidate its download links. Finish uploads and downloads before toggling permissions. View and Write changes reconnect automatically while Access remains enabled. After restoring Access, reload the phone page. Turning off a permission cannot recall content already copied or downloaded.
+View and Write changes take effect on the existing connection. Turning off View clears the phone's displayed history, cancels reads, and invalidates download links while leaving permitted uploads running. Turning off Write cancels uploads and pending clipboard images while leaving permitted downloads running. Access off disconnects the device and cancels all its requests; the phone retries while waiting for Access to be enabled. Turning off a permission cannot recall content already copied or downloaded.
 
-**Allow remote access** blocks all remote reads, writes and pairing when switched off, while retaining trusted devices for later use. Enable it and reload the phone page to reconnect. **Pause sync** only stops new transfers; it leaves existing shared content accessible.
+**Allow remote access** blocks all remote reads, writes and pairing when switched off, while retaining trusted devices for later use. The phone retries after it is enabled. **Pause sync** only stops new transfers; it leaves existing shared content accessible.
 
 Clipboard history expires after **15 minutes** by default, including while sync is paused. File shares expire after **24 hours** by default; saved Windows copies and original source files remain intact. Settings allows 1–1440 minutes for clipboard history and 1–720 hours for file shares. File age is measured from when it was shared; changing the file lifetime recalculates availability for retained files. Previously downloaded or copied content cannot be recalled from another device.
 
@@ -336,6 +346,16 @@ Check the Windows Settings tab and the tray's pause state. Clipboard sends wait 
 
 </details>
 
+### Transfer recovery
+
+Interrupted or malformed uploads are rejected and temporary files are cleaned up; startup also removes generated upload files left by a crash. If the file index cannot be saved, unpublished managed copies are removed. If deletion fails, the file stays listed so it can be retried. Interrupted uploads must be restarted.
+
+The phone clears remote history after disconnects or denied reads. Delayed responses cannot restore content after permission loss or overwrite a newer refresh.
+
+### Password prompt troubleshooting
+
+If the keyboard appears without a visible password field on an older build, update QuickClip and reload the phone page. The current interface shows the connection overlay until joining succeeds and opens the keyboard only when the field is tapped. Scan a fresh QR if the invitation expired, was replaced, or reached its retry limit. An already trusted device reconnecting without a new invitation does not need to enter the joining password again.
+
 ## Verification
 
 ```powershell
@@ -343,7 +363,7 @@ npm test
 npm run test:electron
 ```
 
-`npm test` covers transport, validation, settings, retry, migration, and history storage. `npm run test:electron` runs an isolated Electron check for clipboard decoding, the desktop and phone interfaces, confirmed transfers, pause/resume, and history reload. Test screenshots are written to `.test-output/`.
+`npm test` currently passes 55 tests covering transport, validation, settings persistence, password verification and retry limits, certificate validation, permission changes, upload cleanup, migration, and history storage. `npm run test:electron` runs an isolated Electron check for clipboard decoding, the desktop and phone interfaces, confirmed transfers, pause/resume, history reload, custom-password joining, existing-tab QR navigation, and a visible, clickable password field. This is a Chromium check, not a substitute for testing on a physical iPhone. Test screenshots are written to `.test-output/`.
 
 For final device verification, send text and an image in both directions, copy a history image after reloading the phone page, upload and download a file, and reconnect after locking the phone.
 

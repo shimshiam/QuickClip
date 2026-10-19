@@ -4,6 +4,18 @@ This document is a historical review. The implementation now uses confirmed clip
 
 Each section details potential failure modes and actionable mitigation strategies based on the current codebase.
 
+## Verified security and resilience behavior
+
+- Electron is kept on the patched 43.x line because QuickClip uses its synchronous clipboard API. Electron 44 replaces those methods with an asynchronous API and cannot be substituted without migrating the clipboard and receipt handling. The Electron smoke test checks the real clipboard API and startup seeding before running isolated transfer tests.
+
+- Certificate storage is restricted before keys are read or generated. Startup preserves healthy server certificates, repairs mismatched server keys, and rejects incomplete, mismatched, expired, or not-yet-valid CA material without silently replacing the trusted CA.
+- Per-device View and Write changes apply on the existing connection. Removing View cancels reads and download tickets; removing Write cancels uploads and pending clipboard images. Unrelated transfers continue. Removing Access closes the connection and cancels all requests for that device.
+- The phone clears displayed remote content on disconnection or denied history responses. Late responses cannot restore content after access is lost or overwrite a newer authorized refresh. Connection failures point to network, firewall, address, and certificate checks rather than assuming every failure is a certificate problem.
+- Uploads stream to disk. Interrupted and malformed requests release their temporary files; startup removes generated temporary files left by a crash. Failed file-index writes remove unpublished copies, and failed file deletions remain listed for retry.
+- Multer and Electron use patched releases, and compatible dependency security updates are recorded in the lockfile. The remaining `npm audit` findings concern `mkcert` and its `node-forge` dependency (GHSA-86w9-cpqp-85rv), for which no patched release was available during verification. QuickClip uses that library to generate certificates, not verify signatures; certificate/key validation uses Node's native `crypto`, and HTTPS uses Node's TLS implementation. These findings are not suppressed.
+
+Remaining platform limitations: a changed PC IP still requires restarting QuickClip and opening the updated address; router isolation and iOS certificate trust require device/network configuration; interrupted uploads restart from the beginning. Resumable uploads and live server reconfiguration are not implemented. The historical mitigation proposals below should not be read as claims that those features exist.
+
 ---
 
 ## 1. Network Discovery & Interface Management (`network.js`)
