@@ -37,13 +37,13 @@ const {
   getLocalIP,
   getNetworkInterfaces,
   generateQRCode,
-  generatePairingToken,
   startMDNS,
   stopMDNS,
 } = require('./network');
 const { createFileManager } = require('./file-manager');
 const { createPolicy, validateSettings } = require('./settings');
 const { migrateData, atomicJSON } = require('./storage');
+const { createDeviceStore } = require('./devices');
 
 // ── Constants ───────────────────────────────────────────────────────────────────
 const LEGACY_DATA_DIR = path.join(__dirname, '..', '..', 'data');
@@ -55,10 +55,12 @@ const ICON_PATH = path.join(__dirname, '..', '..', 'assets', 'tray-icon.png');
 // ── State ───────────────────────────────────────────────────────────────────────
 let mainWindow = null;
 let config = null;
-let serverInfo = { ip: '127.0.0.1', port: DEFAULT_PORT, token: '' };
+let serverInfo = { ip: '127.0.0.1', port: DEFAULT_PORT };
 let fileManager = null;
 let syncPolicy;
 let runningServer;
+let devices;
+let expiryTimer;
 
 // ── Config persistence ──────────────────────────────────────────────────────────
 
@@ -72,7 +74,6 @@ function loadConfig() {
       if (!loaded.networkInterface || typeof loaded.networkInterface.name !== 'string' || typeof loaded.networkInterface.address !== 'string') {
         loaded.networkInterface = null;
       }
-      if (typeof loaded.token !== 'string' || !loaded.token) throw new Error('Missing pairing token');
       return loaded;
     }
   } catch (err) {
@@ -82,7 +83,6 @@ function loadConfig() {
 
   // First-run defaults
   const defaults = {
-    token: generatePairingToken(),
     port: DEFAULT_PORT,
     settings: {
       syncText: true,
@@ -196,11 +196,20 @@ function createMainWindow() {
 // ── IPC Handlers ────────────────────────────────────────────────────────────────
 
 function registerIPCHandlers() {
+  ipcMain.handle('get-trusted-devices', () => devices.list());
+  ipcMain.handle('revoke-device', (_event, id) => { devices.revoke(id); return true; });
+  ipcMain.handle('disconnect-all', () => { devices.revokeAll(); return true; });
+  ipcMain.handle('delete-file', (_event, id) => {
+    const removed = fileManager.deleteFile(id);
+    broadcastRaw(JSON.stringify({ type: 'history-changed' }));
+    return removed;
+  });
   ipcMain.handle('copy-history-item', (_event, id) => copyHistoryItem(id));
   ipcMain.handle('get-qr-code', async () => {
     try {
       const url = `https://${serverInfo.ip}:${serverInfo.port}`;
-      return await generateQRCode(url, serverInfo.token);
+      if (!syncPolicy.get().remoteAccess) throw new Error('Enable remote access before pairing');
+      return await generateQRCode(url, devices.invite().token);
     } catch (err) {
       console.error('[IPC] get-qr-code error:', err.message);
       return '';
@@ -251,6 +260,7 @@ function registerIPCHandlers() {
       saveConfig(nextConfig);
       config = nextConfig;
       syncPolicy.update(validated);
+      runningServer.enforceAccess();
       trimHistory();
       broadcastSettings();
       broadcastRaw(JSON.stringify({ type: 'history-changed' }));
@@ -289,7 +299,7 @@ function registerIPCHandlers() {
   });
 
   ipcMain.handle('get-server-info', () => {
-    return { ...serverInfo };
+    return { ip: serverInfo.ip, port: serverInfo.port };
   });
 
   ipcMain.handle('show-in-explorer', (_event, filePathOrId) => {
@@ -439,22 +449,23 @@ app.on('ready', async () => {
     DATA_DIR = migrateData(LEGACY_DATA_DIR, path.join(app.getPath('userData'), 'runtime'));
     CONFIG_PATH = path.join(DATA_DIR, 'config.json');
     config = loadConfig();
+    devices = createDeviceStore(DATA_DIR);
     syncPolicy = createPolicy(config.settings);
     configure({ dataDir: DATA_DIR, syncPolicy });
     const localIP = getLocalIP(config.networkInterface);
     const port = config.port || DEFAULT_PORT;
-    serverInfo = { ip: localIP, port, token: config.token };
+    serverInfo = { ip: localIP, port };
 
     // 2. Generate TLS certificates
     const certData = await generateCertificates(DATA_DIR, localIP);
 
     // 3. Create file manager
-    fileManager = createFileManager(DATA_DIR);
+    fileManager = createFileManager(DATA_DIR, syncPolicy);
 
     // 4. Start HTTPS + WS server
     runningServer = createServer(certData, {
       port,
-      token: config.token,
+      devices,
       dataDir: DATA_DIR,
       fileManager,
       getHistoryFn: getHistory,
@@ -479,6 +490,15 @@ app.on('ready', async () => {
 
     // 8. Wire up event forwarding
     setupEventForwarding();
+    let retainedItems = '';
+    expiryTimer = setInterval(() => {
+      const current = JSON.stringify([getHistory().map((item) => item.id), fileManager.listSharedFiles().map((item) => item.id)]);
+      if (current !== retainedItems) {
+        retainedItems = current;
+        broadcastRaw(JSON.stringify({ type: 'history-changed' }));
+      }
+    }, 15000);
+    expiryTimer.unref();
 
     // 9. Create system tray
     createTray(mainWindow, ICON_PATH, {
@@ -500,6 +520,7 @@ app.on('ready', async () => {
 app.on('before-quit', () => {
   app.isQuiting = true;
   stopMonitoring();
+  clearInterval(expiryTimer);
   clearHistory();
   if (runningServer) {
     for (const client of runningServer.wss.clients) client.terminate();

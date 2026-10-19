@@ -25,7 +25,7 @@ async function setup(t) {
       return server;
     },
   } }, { Date: class extends Date { static now() { return now; } } });
-  const { httpsServer, wss } = api.createServer({}, { dataDir, token: 'test-token', policy,
+  const { httpsServer, wss, devices, enforceAccess } = api.createServer({}, { dataDir, token: 'test-token', policy,
     fileManager, getHistoryFn: monitor.getHistory, getImagePathFn: monitor.getImagePath,
     writeToClipboardFn: monitor.writeToClipboard });
   t.after(async () => {
@@ -36,9 +36,13 @@ async function setup(t) {
   });
   await once(httpsServer, 'listening');
   const base = `http://127.0.0.1:${httpsServer.address().port}`;
-  const headers = { Authorization: 'Bearer test-token' };
+  const invitation = devices.invite();
+  const pairedResponse = await fetch(base + '/api/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invitation: invitation.token, name: 'Test phone' }) });
+  assert.equal(pairedResponse.status, 200);
+  const credential = await pairedResponse.json();
+  const headers = { Authorization: `Bearer ${credential.token}` };
   async function connect() {
-    const phone = new WebSocket(base.replace('http:', 'ws:') + '/?token=test-token');
+    const phone = new WebSocket(base.replace('http:', 'ws:') + '/?token=' + credential.token);
     const messages = [];
     phone.on('message', (data) => messages.push(JSON.parse(data.toString())));
     await once(phone, 'open');
@@ -53,7 +57,7 @@ async function setup(t) {
     await wait((msg) => msg.type === 'settings');
     return { phone, wait, messages, send: (msg) => phone.send(JSON.stringify(msg)) };
   }
-  return { base, headers, connect, api, monitor, policy, electron, fileManager, dataDir, advanceTime: (ms) => { now += ms; } };
+  return { base, headers, connect, devices, enforceAccess, credential, api, monitor, policy, electron, fileManager, dataDir, advanceTime: (ms) => { now += ms; } };
 }
 
 test('text, image, ping, receipts and retry across reconnect', { timeout: 10000 }, async (t) => {
@@ -169,4 +173,88 @@ test('aborted upload closes and removes its partial file', async (t) => {
   for (let i = 0; i < 100 && fs.readdirSync(directory).length; i++) await new Promise((resolve) => setTimeout(resolve, 10));
   assert.deepEqual(fs.readdirSync(directory), []);
   assert.equal(s.fileManager.listFiles().length, 0);
+});
+
+test('revocation closes sockets, rejects old credentials and invalidates download tickets', async (t) => {
+  const s = await setup(t), c = await s.connect();
+  const file = s.fileManager.saveFile(Buffer.from('private'), 'private.txt');
+  const ticket = await (await fetch(s.base + '/api/download-ticket', { method: 'POST',
+    headers: { ...s.headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: file.id, kind: 'file' }) })).json();
+  const closed = once(c.phone, 'close');
+  s.devices.revoke(s.credential.deviceId);
+  assert.equal((await closed)[0], 4001);
+  for (const endpoint of ['/api/history', '/api/files', '/api/files/' + file.id]) {
+    assert.equal((await fetch(s.base + endpoint, { headers: s.headers })).status, 401);
+  }
+  assert.equal((await fetch(s.base + ticket.url)).status, 401);
+  assert.equal((await fetch(s.base + '/api/files', { headers: { Authorization: 'Bearer test-token' } })).status, 401);
+});
+
+test('remote-access block is distinct from pause and survives reenabling without restoring tickets', async (t) => {
+  const s = await setup(t), c = await s.connect();
+  const file = s.fileManager.saveFile(Buffer.from('private'), 'private.txt');
+  const ticket = await (await fetch(s.base + '/api/download-ticket', { method: 'POST',
+    headers: { ...s.headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: file.id, kind: 'file' }) })).json();
+  const closed = once(c.phone, 'close');
+  s.policy.update({ remoteAccess: false }); s.enforceAccess();
+  assert.equal((await closed)[0], 4003);
+  assert.equal((await fetch(s.base + '/api/files', { headers: s.headers })).status, 403);
+  assert.equal((await fetch(s.base + ticket.url)).status, 401);
+  s.policy.update({ remoteAccess: true });
+  assert.equal((await fetch(s.base + '/api/files', { headers: s.headers })).status, 200);
+  assert.equal((await fetch(s.base + ticket.url)).status, 401);
+});
+
+test('dangerous uploads are rejected and parallel upload limit releases on abort', async (t) => {
+  const s = await setup(t);
+  const form = new FormData(); form.append('file', new Blob(['not executed']), 'script.PS1');
+  assert.equal((await fetch(s.base + '/api/upload', { method: 'POST', headers: s.headers, body: form })).status, 400);
+  const requests = [];
+  t.after(() => requests.forEach((request) => request.destroy()));
+  for (let n = 0; n < 2; n++) {
+    const request = http.request(s.base + '/api/upload', { method: 'POST', headers: {
+      ...s.headers, 'Content-Type': 'multipart/form-data; boundary=limit-boundary',
+    } });
+    request.on('error', () => {}); requests.push(request);
+    request.write('--limit-boundary\r\nContent-Disposition: form-data; name="file"; filename="partial.txt"\r\n\r\nabc');
+  }
+  const directory = path.join(s.dataDir, 'tmp');
+  for (let i = 0; i < 100 && fs.readdirSync(directory).length < 2; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(fs.readdirSync(directory).length, 2);
+  const safe = new FormData(); safe.append('file', new Blob(['safe']), 'safe.txt');
+  assert.equal((await fetch(s.base + '/api/upload', { method: 'POST', headers: s.headers, body: safe })).status, 429);
+  requests.forEach((request) => request.destroy());
+  for (let i = 0; i < 100 && fs.readdirSync(directory).length; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(fs.readdirSync(directory).length, 0);
+  assert.equal((await fetch(s.base + '/api/upload', { method: 'POST', headers: s.headers, body: safe })).status, 200);
+});
+
+test('revoking a device during upload removes partial bytes and never publishes the file', async (t) => {
+  const s = await setup(t);
+  const request = http.request(s.base + '/api/upload', { method: 'POST', headers: {
+    ...s.headers, 'Content-Type': 'multipart/form-data; boundary=revoke-boundary',
+  } });
+  request.on('error', () => {}); t.after(() => request.destroy());
+  request.write('--revoke-boundary\r\nContent-Disposition: form-data; name="file"; filename="partial.txt"\r\n\r\nabc');
+  const directory = path.join(s.dataDir, 'tmp');
+  for (let i = 0; i < 100 && !fs.readdirSync(directory).length; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(fs.readdirSync(directory).length, 1);
+  s.devices.revoke(s.credential.deviceId);
+  for (let i = 0; i < 100 && fs.readdirSync(directory).length; i++) await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.equal(fs.readdirSync(directory).length, 0);
+  assert.equal(s.fileManager.listFiles().length, 0);
+});
+
+test('unauthenticated clients cannot read content, upload or mint download tickets', async (t) => {
+  const s = await setup(t);
+  for (const endpoint of ['/api/status', '/api/history', '/api/files', '/api/files/unknown', '/api/clipboard-images/unknown']) {
+    assert.equal((await fetch(s.base + endpoint)).status, 401);
+  }
+  for (const endpoint of ['/api/upload', '/api/download-ticket']) {
+    assert.equal((await fetch(s.base + endpoint, { method: 'POST' })).status, 401);
+  }
+  const invitation = s.devices.invite();
+  const pair = () => fetch(s.base + '/api/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ invitation: invitation.token }) });
+  assert.equal((await pair()).status, 200);
+  assert.equal((await pair()).status, 401);
 });

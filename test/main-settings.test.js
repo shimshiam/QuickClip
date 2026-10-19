@@ -29,7 +29,7 @@ test('application startup, IPC settings persistence, failure rollback and tray p
       options = supplied;
       const httpsServer = new EventEmitter(); httpsServer.close = () => {};
       setImmediate(() => httpsServer.emit('listening'));
-      return { httpsServer, wss: { clients: [], close() {} } };
+      return { enforceAccess() {}, httpsServer, wss: { clients: [], close() {} } };
     }, broadcastClipboard() {}, broadcastFileAvailable() {}, getConnectedDevices: () => [],
     onDeviceConnect() {}, onDeviceDisconnect() {}, onFileReceived() {}, broadcastSettings() {}, broadcastRaw() {} };
     load('src/main/main.js', {
@@ -47,7 +47,7 @@ test('application startup, IPC settings persistence, failure rollback and tray p
   }
   const first = await boot();
   t.after(() => first.app.emit('before-quit'));
-  assert.equal(first.options.token, 'preserved-token');
+  assert.equal(first.options.devices.authenticate('preserved-token'), null);
   assert.equal(first.ipc.get('update-settings')({}, { syncText: false, syncImages: false, syncFiles: false, maxHistory: 3 }), true);
   assert.equal(first.options.policy.allows('text'), false);
   await assert.rejects(first.ipc.get('select-and-send-files')(), /disabled/);

@@ -54,7 +54,9 @@ test('network override persists, restarts, and updates certificate, server and p
   assert.equal(second.certIP, '10.8.0.2');
   assert.equal(second.serverOptions.hostnames[0], second.certIP);
   assert.equal(second.ipc.get('get-status')().ip, second.certIP);
-  assert.equal(await second.ipc.get('get-qr-code')(), 'https://10.8.0.2:8443#preserved-token');
+  const pairing = await second.ipc.get('get-qr-code')();
+  assert.equal(pairing.split('#')[0], 'https://10.8.0.2:8443');
+  assert.match(pairing.split('#')[1], /^[a-f0-9]{64}$/);
   assert.equal(second.ipc.get('get-settings')().maxHistory, 17);
   second.controls.select({ name: 'VPN', address: '10.8.0.2' });
   assert.equal(second.relaunches, 0);

@@ -5,6 +5,8 @@ const path = require('path');
 const crypto = require('crypto');
 const { shell } = require('electron');
 const { atomicJSON } = require('./storage');
+const { createPolicy } = require('./settings');
+const { assertSafeFile } = require('./file-safety');
 
 /**
  * QuickClip – File Storage Manager
@@ -19,7 +21,7 @@ const { atomicJSON } = require('./storage');
  * @param {string} dataDir – Absolute path to the application data directory
  * @returns {{ saveFile, getFile, listFiles, deleteFile, openFile, revealFile }}
  */
-function createFileManager(dataDir) {
+function createFileManager(dataDir, policy = createPolicy()) {
   const receivedDir = path.join(dataDir, 'received');
   const indexPath   = path.join(receivedDir, 'index.json');
 
@@ -97,6 +99,33 @@ function createFileManager(dataDir) {
     return resolved.startsWith(targetDir + path.sep) || resolved === targetDir;
   }
 
+  let reservedBytes = 0;
+  function assertCapacity(bytes = 0) {
+    if (!Number.isSafeInteger(bytes) || bytes < 0) throw new Error('Invalid file size');
+    let total = 0;
+    for (const directory of [receivedDir, path.join(dataDir, 'tmp')]) {
+      if (!fs.existsSync(directory)) continue;
+      for (const item of fs.readdirSync(directory, { withFileTypes: true })) {
+        if (item.isFile()) total += fs.statSync(path.join(directory, item.name)).size;
+      }
+    }
+    if (total + reservedBytes + bytes > policy.get().storageQuotaMB * 1024 * 1024) throw new Error('Shared storage quota reached; delete saved files on Windows');
+    const disk = fs.statfsSync(receivedDir);
+    if (disk.bavail * disk.bsize < reservedBytes + bytes + 256 * 1024 * 1024) throw new Error('Not enough free disk space; keep at least 256 MB free');
+  }
+  function reserveCapacity(bytes) {
+    assertCapacity(bytes); reservedBytes += bytes;
+    let released = false;
+    return () => { if (!released) { released = true; reservedBytes -= bytes; } };
+  }
+  function isShared(entry) {
+    return Number.isFinite(entry.timestamp) && entry.timestamp + policy.get().fileTtlHours * 3600000 > Date.now();
+  }
+  function sharedFile(id) {
+    const entry = index.find((entry) => entry.id === id);
+    return entry && isShared(entry) ? getFile(id) : null;
+  }
+
   // ── Public methods ────────────────────────────────────────────────────────
 
   /**
@@ -107,6 +136,8 @@ function createFileManager(dataDir) {
    * @returns {{ id: string, name: string, path: string, size: number }}
    */
   function saveFile(buffer, originalName) {
+    assertSafeFile(originalName);
+    assertCapacity(buffer.length);
     const id = crypto.randomUUID();
     const safeName = sanitizeFileName(originalName);
     const fileName = `${id}_${safeName}`;
@@ -144,6 +175,8 @@ function createFileManager(dataDir) {
    * @returns {{ id: string, name: string, path: string, size: number }}
    */
   function saveFileFromPath(tmpPath, originalName, size = 0) {
+    assertSafeFile(originalName);
+    assertCapacity();
     const id = crypto.randomUUID();
     const safeName = sanitizeFileName(originalName);
     const fileName = `${id}_${safeName}`;
@@ -198,6 +231,8 @@ function createFileManager(dataDir) {
       throw new Error('Invalid file path');
     }
     const originalName = path.basename(sourcePath);
+    assertSafeFile(originalName);
+    assertCapacity(fs.statSync(sourcePath).size);
     const id = crypto.randomUUID();
     const safeName = sanitizeFileName(originalName);
     const fileName = `${id}_${safeName}`;
@@ -290,9 +325,12 @@ function createFileManager(dataDir) {
       return;
     }
     try {
-      await shell.openPath(entry.path);
+      assertSafeFile(entry.name);
+      const error = await shell.openPath(entry.path);
+      if (error) throw new Error(error);
     } catch (err) {
       console.error('[FileManager] Failed to open file:', err.message);
+      throw err;
     }
   }
 
@@ -315,6 +353,10 @@ function createFileManager(dataDir) {
 
   // ── Return public interface ───────────────────────────────────────────────
   return {
+    assertCapacity,
+    reserveCapacity,
+    sharedFile,
+    listSharedFiles: () => listFiles().filter(isShared),
     saveFile,
     saveFileFromPath,
     saveDesktopFile,

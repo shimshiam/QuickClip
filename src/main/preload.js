@@ -14,6 +14,10 @@ contextBridge.exposeInMainWorld('quickclip', {
 
   /** Fetch QR-code data-URL for device pairing. */
   getQRCode: () => ipcRenderer.invoke('get-qr-code'),
+  getTrustedDevices: () => ipcRenderer.invoke('get-trusted-devices'),
+  revokeDevice: (id) => ipcRenderer.invoke('revoke-device', id),
+  disconnectAll: () => ipcRenderer.invoke('disconnect-all'),
+  deleteFile: (id) => ipcRenderer.invoke('delete-file', id),
 
   /** Fetch current server / connection status. */
   getStatus: () => ipcRenderer.invoke('get-status'),

@@ -43,6 +43,7 @@ function configure({ dataDir, syncPolicy }) {
 }
 
 function getImagePath(id) {
+  expireHistory();
   if (!history.some((item) => item.id === id && item.type === 'image')) return null;
   return path.join(imageDir, `${id}.png`);
 }
@@ -54,9 +55,14 @@ function removeImages(items) {
   }
 }
 
-function trimHistory() { removeImages(history.splice(policy.get().maxHistory)); }
+function expireHistory() {
+  const cutoff = Date.now() - policy.get().clipboardTtlMinutes * 60000;
+  removeImages(history.filter((item) => item.timestamp <= cutoff));
+  history = history.filter((item) => item.timestamp > cutoff);
+}
+function trimHistory() { expireHistory(); removeImages(history.splice(policy.get().maxHistory)); }
 function clearHistory() { removeImages(history); history = []; }
-function getHistory() { return history.map((item) => ({ ...item })); }
+function getHistory() { expireHistory(); return history.map((item) => ({ ...item })); }
 function notify(item) { for (const cb of callbacks) { try { cb(item); } catch (err) { console.error(err.message); } } }
 
 function record(type, value, source, img) {
@@ -145,6 +151,7 @@ function writeToClipboard(item, source = 'remote', { fromHistory = false } = {})
 }
 
 function copyHistoryItem(id) {
+  expireHistory();
   const item = history.find((entry) => entry.id === id);
   if (!item) return { ok: false, error: 'This history item has expired' };
   try {

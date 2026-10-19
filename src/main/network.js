@@ -63,7 +63,7 @@ async function generateQRCode(serverUrl, pairingToken) {
   try {
     const QRCode = require('qrcode');
     const pairingURL = new URL(serverUrl);
-    pairingURL.hash = new URLSearchParams({ ip: pairingURL.hostname, port: pairingURL.port || '8443', token: pairingToken }).toString();
+    pairingURL.hash = new URLSearchParams({ ip: pairingURL.hostname, port: pairingURL.port || '8443', invitation: pairingToken }).toString();
     const payload = pairingURL.href;
     const dataUrl = await QRCode.toDataURL(payload, {
       width: 256,
