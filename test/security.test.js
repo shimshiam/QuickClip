@@ -111,3 +111,18 @@ test('streaming capacity failure cleans up partial upload and releases reservati
   assert.equal(reserved, 0);
   assert.deepEqual(fs.readdirSync(root), []);
 });
+
+test('device permissions persist, validate patches and retain pairing while access is off', (t) => {
+  const root = temporary(t), devices = createDeviceStore(root);
+  const paired = devices.pair(devices.invite().token, 'Phone');
+  assert.equal(devices.allows(paired.deviceId, 'view'), true);
+  devices.updatePermissions(paired.deviceId, { view: false, access: false });
+  const loaded = createDeviceStore(root);
+  assert.equal(loaded.authenticate(paired.token), paired.deviceId);
+  assert.equal(loaded.allows(paired.deviceId), false);
+  loaded.updatePermissions(paired.deviceId, { access: true });
+  assert.equal(loaded.allows(paired.deviceId, 'view'), false);
+  assert.equal(loaded.allows(paired.deviceId, 'write'), true);
+  assert.throws(() => loaded.updatePermissions(paired.deviceId, { write: 'false' }), /Invalid/);
+  assert.throws(() => loaded.updatePermissions(paired.deviceId, { unknown: true }), /Invalid/);
+});

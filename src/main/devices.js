@@ -15,6 +15,8 @@ function createDeviceStore(dataDir, now = Date.now) {
   }
   let invitation = null;
   const listeners = [];
+  const changeListeners = [];
+  const permissions = (device) => ({ view: true, write: true, access: true, ...device.permissions });
   function commit(next) { atomicJSON(file, next); devices = next; }
   return {
     invite() {
@@ -37,8 +39,21 @@ function createDeviceStore(dataDir, now = Date.now) {
       const hash = digest(token);
       return devices.find((device) => device.tokenHash === hash)?.id || null;
     },
+    allows(id, capability = 'access') {
+      const device = devices.find(device => device.id === id);
+      return !!device && permissions(device).access && permissions(device)[capability] === true;
+    },
+    updatePermissions(id, patch) {
+      if (!patch || typeof patch !== 'object' || Array.isArray(patch)
+        || Object.entries(patch).some(([key, value]) => !['view', 'write', 'access'].includes(key) || typeof value !== 'boolean')) throw new Error('Invalid device permissions');
+      if (!devices.some(device => device.id === id)) throw new Error('Device no longer paired');
+      commit(devices.map(device => device.id === id ? { ...device, permissions: { ...permissions(device), ...patch } } : device));
+      changeListeners.forEach(listener => listener(id));
+      return true;
+    },
+    onChange(listener) { changeListeners.push(listener); },
     has: (id) => devices.some((device) => device.id === id),
-    list: () => devices.map(({ tokenHash, ...device }) => device),
+    list: () => devices.map(({ tokenHash, ...device }) => ({ ...device, permissions: permissions(device) })),
     revoke(id) {
       if (typeof id !== 'string') throw new Error('Invalid device');
       commit(devices.filter((device) => device.id !== id));

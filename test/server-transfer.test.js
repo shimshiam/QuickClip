@@ -258,3 +258,39 @@ test('unauthenticated clients cannot read content, upload or mint download ticke
   assert.equal((await pair()).status, 200);
   assert.equal((await pair()).status, 401);
 });
+
+test('per-device permissions block reads, broadcasts and writes, invalidate tickets and preserve credentials', async (t) => {
+  const s = await setup(t);
+  const file = s.fileManager.saveFile(Buffer.from('private'), 'private.txt');
+  const ticket = await (await fetch(s.base + '/api/download-ticket', { method: 'POST',
+    headers: { ...s.headers, 'Content-Type': 'application/json' }, body: JSON.stringify({ id: file.id, kind: 'file' }) })).json();
+  let c = await s.connect();
+  const closed = once(c.phone, 'close');
+  s.devices.updatePermissions(s.credential.deviceId, { view: false });
+  assert.equal((await closed)[0], 4004);
+  for (const endpoint of ['/api/history', '/api/files', '/api/files/' + file.id, '/api/clipboard-images/anything']) {
+    assert.equal((await fetch(s.base + endpoint, { headers: s.headers })).status, 403);
+  }
+  assert.equal((await fetch(s.base + ticket.url)).status, 401);
+  assert.equal((await fetch(s.base + '/api/download-ticket', { method: 'POST', headers: s.headers })).status, 403);
+  c = await s.connect();
+  s.api.broadcastClipboard({ type: 'text', content: 'must not leak' });
+  c.send({ type: 'ping' }); await c.wait(m => m.type === 'pong');
+  assert.equal(c.messages.some(m => m.type === 'clipboard-text'), false);
+  c.send({ type: 'clipboard-text', id: 'allowed-write', content: 'allowed' });
+  assert.equal((await c.wait(m => m.id === 'allowed-write')).ok, true);
+  const changed = once(c.phone, 'close');
+  s.devices.updatePermissions(s.credential.deviceId, { view: true, write: false });
+  await changed;
+  c = await s.connect();
+  assert.equal((await fetch(s.base + '/api/history', { headers: s.headers })).status, 200);
+  c.send({ type: 'clipboard-text', id: 'blocked-write', content: 'blocked' });
+  assert.equal((await c.wait(m => m.id === 'blocked-write')).ok, false);
+  assert.equal((await fetch(s.base + '/api/upload', { method: 'POST', headers: s.headers })).status, 403);
+  const blocked = once(c.phone, 'close');
+  s.devices.updatePermissions(s.credential.deviceId, { access: false });
+  assert.equal((await blocked)[0], 4003);
+  assert.equal((await fetch(s.base + '/api/history', { headers: s.headers })).status, 403);
+  s.devices.updatePermissions(s.credential.deviceId, { access: true });
+  assert.equal((await fetch(s.base + '/api/history', { headers: s.headers })).status, 200);
+});

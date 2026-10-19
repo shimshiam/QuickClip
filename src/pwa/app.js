@@ -164,10 +164,18 @@
       delivery.disconnect();
       expectingBinary = null;
 
+      if (event && event.code === 4004) clearRemoteItems();
       if (event && [4001, 4003].includes(event.code)) {
         clearRemoteItems();
         if (event.code === 4001) { authToken = ''; localStorage.removeItem('quickclip_device_token'); }
-        overlayStatus.textContent = event.code === 4003 ? 'Remote access is blocked on Windows. Enable it there, then reload this page.' : 'Device access was removed. Generate a new pairing code on Windows.';
+        if (event.code === 4003) {
+          clearTimeout(reconnectTimer);
+          overlayStatus.textContent = 'Access is off on Windows. Waiting for access to be enabled…';
+          reconnectTimer = setTimeout(connectWebSocket, 5000);
+        } else {
+          clearTimeout(reconnectTimer);
+          overlayStatus.textContent = 'Device access was removed. Generate a new pairing code on Windows.';
+        }
         return;
       } else if (event && event.code === 1006) {
         overlayStatus.innerHTML = 'Connecting to server failed (`1006`).<br><br><span style="color:#ffd93d;font-size:0.9em">⚠️ <b>SSL Certificate Not Trusted</b><br>Safari blocks secure WebSockets if the CA certificate is not fully trusted.<br><br><b>To fix in iOS:</b><br>1. Download & Install <b>ca.crt</b><br>2. Go to <b>Settings → General → About → Certificate Trust Settings</b> and toggle <b>QuickClip CA</b> to <b>ON</b>.</span>';

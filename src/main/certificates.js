@@ -3,10 +3,16 @@
 const fs = require('fs');
 const path = require('path');
 const { X509Certificate } = require('crypto');
+const { protectCertificateDirectory } = require('./certificate-permissions');
 const RENEW_BEFORE_MS = 30 * 24 * 60 * 60 * 1000;
 
 function needsRenewal(cert) {
   try {
+    // Secure existing keys before reading them, and new files before creating them.
+    protectCertificateDirectory(certsDir);
+    if (fs.existsSync(caPath) !== fs.existsSync(caKeyPath)) {
+      throw new Error('The local CA is incomplete. Restore its matching certificate and key or follow the CA replacement instructions in README.md.');
+    }
     const parsed = new X509Certificate(cert);
     const expires = Date.parse(parsed.validTo);
     const starts = Date.parse(parsed.validFrom);
@@ -67,9 +73,9 @@ async function generateCertificates(dataDir, localIP) {
 
       // 3. Persist everything
       fs.writeFileSync(caPath, ca.cert, 'utf-8');
-      fs.writeFileSync(caKeyPath, ca.key, 'utf-8');
+      fs.writeFileSync(caKeyPath, ca.key, { encoding: 'utf-8', mode: 0o600 });
       fs.writeFileSync(certPath, serverCert.cert, 'utf-8');
-      fs.writeFileSync(keyPath, serverCert.key, 'utf-8');
+      fs.writeFileSync(keyPath, serverCert.key, { encoding: 'utf-8', mode: 0o600 });
       fs.writeFileSync(ipPath, localIP, 'utf-8');
 
       console.log('[Certs] CA and server certificate generated for', localIP);
@@ -103,7 +109,7 @@ async function generateCertificates(dataDir, localIP) {
       key  = serverCert.key;
 
       fs.writeFileSync(certPath, cert, 'utf-8');
-      fs.writeFileSync(keyPath, key, 'utf-8');
+      fs.writeFileSync(keyPath, key, { encoding: 'utf-8', mode: 0o600 });
       fs.writeFileSync(ipPath, localIP, 'utf-8');
 
       console.log('[Certs] Server certificate regenerated for', localIP);

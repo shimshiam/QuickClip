@@ -196,7 +196,9 @@ function createMainWindow() {
 // ── IPC Handlers ────────────────────────────────────────────────────────────────
 
 function registerIPCHandlers() {
-  ipcMain.handle('get-trusted-devices', () => devices.list());
+  ipcMain.handle('get-trusted-devices', () => devices.list().map(device => ({ ...device,
+    connected: getConnectedDevices().some(client => client.deviceId === device.id) })));
+  ipcMain.handle('set-device-permissions', (_event, id, patch) => devices.updatePermissions(id, patch));
   ipcMain.handle('revoke-device', (_event, id) => { devices.revoke(id); return true; });
   ipcMain.handle('disconnect-all', () => { devices.revokeAll(); return true; });
   ipcMain.handle('delete-file', (_event, id) => {

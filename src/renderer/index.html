@@ -45,12 +45,19 @@
           <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
         </svg>
       </button>
-      <div class="connection-badge" id="connectionBadge">
+      <button type="button" class="connection-badge" id="connectionBadge" aria-haspopup="dialog" aria-controls="deviceDrawer" aria-expanded="false" title="Manage devices">
         <span class="status-dot disconnected" id="statusDot"></span>
         <span class="status-text" id="statusText">No Devices</span>
-      </div>
+      </button>
     </div>
   </header>
+
+  <dialog id="deviceDrawer" class="device-drawer" aria-labelledby="deviceDrawerTitle">
+    <div class="drawer-header"><h2 id="deviceDrawerTitle">Devices</h2><button type="button" id="closeDeviceDrawer" class="btn btn-ghost" aria-label="Close devices">✕</button></div>
+    <p class="drawer-description">Control access for each paired device.</p>
+    <p id="deviceDrawerStatus" role="status" class="drawer-description"></p>
+    <div id="drawerDeviceList" class="drawer-device-list"></div>
+  </dialog>
 
   <!-- ====== Tab Navigation ====== -->
   <nav class="tab-nav">
@@ -96,7 +103,7 @@
       <div class="pair-container">
         <div class="qr-wrapper">
           <div class="qr-glow"></div>
-          <div class="qr-frame">
+          <button type="button" class="qr-frame" id="createPairingBtn" aria-label="Create pairing code">
             <img id="qrCodeImage" class="qr-image" alt="QR Code" />
             <div class="qr-placeholder" id="qrPlaceholder">
               <svg viewBox="0 0 24 24" width="48" height="48" fill="none" stroke="var(--text-secondary)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -106,12 +113,12 @@
                 <rect x="6" y="14" width="4" height="4" />
                 <circle cx="16" cy="16" r="2" />
               </svg>
-              <span>Generating QR code…</span>
+              <span id="qrPlaceholderText" aria-live="polite">Create pairing code</span>
             </div>
-          </div>
+          </button>
         </div>
 
-        <p class="settings-desc">This QR code pairs one device and expires in five minutes. Generate another in Settings.</p>
+        <p class="pair-description">Each code pairs one device and expires after five minutes.<span>Click the QR code or go to Settings to create a new one.</span></p>
       <div class="server-url-wrap" id="serverUrlWrap" title="Click to copy server URL">
           <span class="server-url" id="serverUrl">https://192.168.1.100:8443</span>
           <svg class="copy-url-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -139,25 +146,27 @@
             </svg>
           </button>
           <div class="accordion-content" id="setupContent">
-            <div class="accordion-body">
-              <ol class="setup-steps">
-                <li>
-                  <strong>Download the CA Certificate</strong> by clicking the button above.
-                </li>
-                <li>
-                  <strong>Transfer it to your iPhone</strong> via AirDrop or email it to yourself.
-                </li>
-                <li>
-                  On your iPhone, go to <strong>Settings → General → VPN &amp; Device Management</strong> and install the profile.
-                </li>
-                <li>
-                  Then navigate to <strong>Settings → General → About → Certificate Trust Settings</strong> and enable full trust for the QuickClip CA.
-                </li>
-                <li>
-                  <strong>Scan the QR code</strong> above with your iPhone camera to connect.
-                </li>
-              </ol>
-              <p class="setup-note">You only need to do this once. After the certificate is trusted, your iPhone will connect automatically on the same network.</p>
+            <div class="accordion-clip">
+              <div class="accordion-body">
+                <ol class="setup-steps">
+                  <li>
+                    <strong>Download the CA Certificate</strong> by clicking the button above.
+                  </li>
+                  <li>
+                    <strong>Transfer it to your iPhone</strong> via AirDrop or email it to yourself.
+                  </li>
+                  <li>
+                    On your iPhone, go to <strong>Settings → General → VPN &amp; Device Management</strong> and install the profile.
+                  </li>
+                  <li>
+                    Then navigate to <strong>Settings → General → About → Certificate Trust Settings</strong> and enable full trust for the QuickClip CA.
+                  </li>
+                  <li>
+                    <strong>Scan the QR code</strong> above with your iPhone camera to connect.
+                  </li>
+                </ol>
+                <p class="setup-note">You only need to do this once. After the certificate is trusted, your iPhone will connect automatically on the same network.</p>
+              </div>
             </div>
           </div>
         </div>
@@ -303,7 +312,7 @@
         <div class="settings-row"><label class="settings-label" for="settingClipboardTtl">Clipboard expiry (minutes)</label><input class="settings-input" type="number" id="settingClipboardTtl" min="1" max="1440" value="15"></div>
         <div class="settings-row"><label class="settings-label" for="settingFileTtl">File sharing expiry (hours)</label><input class="settings-input" type="number" id="settingFileTtl" min="1" max="720" value="24"></div>
         <div class="settings-row"><label class="settings-label" for="settingStorageQuota">Shared storage limit (MB)</label><input class="settings-input" type="number" id="settingStorageQuota" min="500" max="102400" value="2048"></div>
-        <p class="settings-desc" style="padding: 0 18px 16px;">Expired file shares remain saved on Windows. Delete saved copies in Files to reclaim space. Executables, scripts, shortcuts and macro-enabled documents are blocked. Up to two uploads can run at once, with a 500 MB limit per file.</p>
+        <div class="settings-footnote"><p>Expired file shares stay saved on Windows. Delete saved copies in Files to free up space.</p><p>Executables, scripts, shortcuts, and macro-enabled documents are blocked.</p><p>Up to two uploads at once. Maximum file size: 500 MB.</p></div>
       </div>
     </section>
 

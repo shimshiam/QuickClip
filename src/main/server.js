@@ -20,7 +20,7 @@ const fileCallbacks = [];
 let activePolicy = createPolicy();
 
 const publicFile = ({ id, name, size, timestamp, available = true }) => ({ id, name, size, timestamp, available });
-const deviceInfo = ({ id, address, connectedAt }) => ({ id, address, connectedAt });
+const deviceInfo = ({ id, deviceId, address, connectedAt }) => ({ id, deviceId, address, connectedAt });
 function notify(callbacks, value) { for (const cb of callbacks) { try { cb(value); } catch (err) { console.error(err.message); } } }
 
 function createServer(certData, options) {
@@ -47,6 +47,14 @@ function createServer(certData, options) {
     res.setHeader('Referrer-Policy', 'no-referrer');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     if (!trustedRequest(req)) return res.status(403).json({ error: 'Origin or host is not allowed' });
+    const websocketOrigin = `wss://${new URL(`https://${req.headers.host}`).host}`;
+    res.setHeader('Content-Security-Policy', [
+      "default-src 'none'", "script-src 'self'", "script-src-attr 'none'", "style-src 'self'",
+      "img-src 'self' data: blob:", "font-src 'self'", `connect-src 'self' ${websocketOrigin}`,
+      "worker-src 'self'", "manifest-src 'self'", "object-src 'none'", "base-uri 'none'",
+      "form-action 'none'", "frame-ancestors 'none'",
+    ].join('; '));
+    res.setHeader('X-Frame-Options', 'DENY');
     if (req.headers.origin) {
       res.setHeader('Access-Control-Allow-Origin', req.headers.origin);
       res.vary('Origin');
@@ -61,6 +69,7 @@ function createServer(certData, options) {
     if (!policy.get().remoteAccess) return res.status(403).json({ error: 'Remote access is blocked on Windows' });
     const header = req.headers.authorization || '';
     const deviceId = header.startsWith('Bearer ') && devices.authenticate(header.slice(7));
+    if (deviceId && !devices.allows(deviceId)) return res.status(403).json({ error: 'Device access is disabled on Windows' });
     if (deviceId) { req.deviceId = deviceId; trackRequest(req, res, deviceId); return next(); }
     res.status(401).json({ error: 'Unauthorized' });
   }
@@ -68,12 +77,18 @@ function createServer(certData, options) {
     activeRequests.set(req, { res, deviceId });
     res.once('close', () => activeRequests.delete(req));
   }
-  function allowedDevice(id) { return policy.get().remoteAccess && devices.has(id); }
-  function enforceAccess(id = null) {
+  function deviceSettings(id) {
+    const settings = policy.get();
+    const write = devices.allows(id, 'write');
+    return { ...settings, syncText: settings.syncText && write, syncImages: settings.syncImages && write,
+      syncFiles: settings.syncFiles && write };
+  }
+  function allowedDevice(id) { return policy.get().remoteAccess && devices.allows(id); }
+  function enforceAccess(id = null, permissionsChanged = false) {
     for (const client of clients) if (client.owner === httpsServer && (!allowedDevice(client.deviceId) || id === client.deviceId)) {
       clients.delete(client);
       notify(disconnectCallbacks, deviceInfo(client));
-      client.ws.close(policy.get().remoteAccess ? 4001 : 4003, 'Access removed');
+      client.ws.close(permissionsChanged ? (allowedDevice(client.deviceId) ? 4004 : 4003) : (policy.get().remoteAccess ? 4001 : 4003), 'Access changed');
       const timer = setTimeout(() => client.ws.terminate(), 1000); timer.unref();
     }
     for (const [req, entry] of activeRequests) if (!allowedDevice(entry.deviceId) || id === entry.deviceId) {
@@ -82,6 +97,11 @@ function createServer(certData, options) {
     for (const [key, ticket] of tickets) if (!allowedDevice(ticket.deviceId) || id === ticket.deviceId) tickets.delete(key);
   }
   devices.onRevoke(enforceAccess);
+  devices.onChange(id => enforceAccess(id, true));
+  const requirePermission = capability => (req, res, next) => {
+    if (!devices.allows(req.deviceId, capability)) return res.status(403).json({ error: capability + ' permission is disabled on Windows' });
+    next();
+  };
   function allowFiles(_req, res, next) {
     try { policy.assert('file'); next(); }
     catch (err) { res.status(403).json({ error: err.message }); }
@@ -106,18 +126,18 @@ function createServer(certData, options) {
       res.json(result);
     } catch (err) { next(err); }
   });
-  app.get('/api/status', authenticate, (_req, res) => res.json({ connected: clients.size > 0, deviceCount: clients.size, settings: policy.get() }));
-  app.get('/api/history', authenticate, (_req, res) => res.json(getHistoryFn()));
-  app.get('/api/files', authenticate, (_req, res) => res.json(fileManager.listSharedFiles().map(publicFile)));
-  app.get('/api/files/:id', authenticate, (req, res) => sendStoredFile(res, fileManager.sharedFile(req.params.id)));
-  app.get('/api/clipboard-images/:id', authenticate, (req, res) => {
+  app.get('/api/status', authenticate, (req, res) => res.json({ connected: clients.size > 0, deviceCount: clients.size, settings: deviceSettings(req.deviceId) }));
+  app.get('/api/history', authenticate, requirePermission('view'), (_req, res) => res.json(getHistoryFn()));
+  app.get('/api/files', authenticate, requirePermission('view'), (_req, res) => res.json(fileManager.listSharedFiles().map(publicFile)));
+  app.get('/api/files/:id', authenticate, requirePermission('view'), (req, res) => sendStoredFile(res, fileManager.sharedFile(req.params.id)));
+  app.get('/api/clipboard-images/:id', authenticate, requirePermission('view'), (req, res) => {
     const imagePath = getImagePathFn(req.params.id);
     sendStoredFile(res, imagePath ? { path: imagePath } : null, true);
   });
 
   // Tickets scope a download URL to one file for 60 seconds. Range requests
   // and Safari retries may reuse it during that interval.
-  app.post('/api/download-ticket', authenticate, express.json({ limit: '4kb' }), (req, res) => {
+  app.post('/api/download-ticket', authenticate, requirePermission('view'), express.json({ limit: '4kb' }), (req, res) => {
     const { id, kind } = req.body || {};
     if (typeof id !== 'string' || !['file', 'image'].includes(kind)) return res.status(400).json({ error: 'Invalid download request' });
     const exists = kind === 'file' ? fileManager.sharedFile(id) : getImagePathFn(id);
@@ -130,7 +150,7 @@ function createServer(certData, options) {
   });
   app.get('/api/download/:ticket', (req, res) => {
     const item = tickets.get(req.params.ticket);
-    if (!item || item.expires <= Date.now() || !allowedDevice(item.deviceId)) {
+    if (!item || item.expires <= Date.now() || (!allowedDevice(item.deviceId) || !devices.allows(item.deviceId, 'view'))) {
       tickets.delete(req.params.ticket);
       return res.status(401).json({ error: 'Download link expired; tap Save again' });
     }
@@ -154,9 +174,9 @@ function createServer(certData, options) {
   const upload = multer({ storage: createUploadStorage(tmpDir, fileManager.reserveCapacity),
     fileFilter: (_req, file, done) => { try { assertSafeFile(file.originalname); done(null, true); } catch (err) { done(err); } },
     limits: { fileSize: 500 * 1024 * 1024, files: 1, fields: 0, parts: 2 } });
-  app.post('/api/upload', authenticate, allowFiles, uploadSlot, upload.single('file'), (req, res, next) => {
+  app.post('/api/upload', authenticate, requirePermission('write'), allowFiles, uploadSlot, upload.single('file'), (req, res, next) => {
     try {
-      if (!allowedDevice(req.deviceId)) throw new Error('Device access was removed');
+      if (!allowedDevice(req.deviceId) || !devices.allows(req.deviceId, 'write')) throw new Error('Device access was removed');
       policy.assert('file'); // Settings can change while an upload is in progress.
       if (!req.file) return res.status(400).json({ error: 'No file provided' });
       const result = fileManager.saveFileFromPath(req.file.path, req.file.originalname, req.file.size);
@@ -189,14 +209,14 @@ function createServer(certData, options) {
     const deviceId = devices.authenticate(url.searchParams.get('token'));
     if (!deviceId) { ws.close(4001, 'Unauthorized'); return; }
     if (!allowedDevice(deviceId)) { ws.close(4003, 'Remote access blocked'); return; }
-    const client = { ws, deviceId, owner: httpsServer, id: crypto.randomUUID(), address: req.socket.remoteAddress, connectedAt: Date.now() };
+    const client = { ws, settings: () => deviceSettings(deviceId), canView: () => allowedDevice(deviceId) && devices.allows(deviceId, 'view'), deviceId, owner: httpsServer, id: crypto.randomUUID(), address: req.socket.remoteAddress, connectedAt: Date.now() };
     clients.add(client);
     notify(connectCallbacks, deviceInfo(client));
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
     attachTransferHandler(ws, { policy, receipts: { get: (id) => receipts.get(`${deviceId}:${id}`), set: (id, value) => receipts.set(`${deviceId}:${id}`, value) },
-      write: (item) => { if (!allowedDevice(deviceId)) throw new Error('Device access was removed'); return writeToClipboardFn(item); } });
-    ws.send(JSON.stringify({ type: 'settings', settings: policy.get() }));
+      write: (item) => { if (!allowedDevice(deviceId) || !devices.allows(deviceId, 'write')) throw new Error('Write permission is disabled on Windows'); return writeToClipboardFn(item); } });
+    ws.send(JSON.stringify({ type: 'settings', settings: deviceSettings(deviceId) }));
     const remove = () => { if (clients.delete(client)) notify(disconnectCallbacks, deviceInfo(client)); };
     ws.on('close', remove);
     ws.on('error', remove);
@@ -215,7 +235,7 @@ function createServer(certData, options) {
 
 function broadcastRaw(data, excludeWs) {
   if (!activePolicy.get().remoteAccess) return;
-  for (const client of clients) if (client.ws !== excludeWs && client.ws.readyState === WebSocket.OPEN) {
+  for (const client of clients) if (client.canView() && client.ws !== excludeWs && client.ws.readyState === WebSocket.OPEN) {
     // Bound per-client queued data so a sleeping phone cannot grow memory indefinitely.
     if (client.ws.bufferedAmount > 2 * 1024 * 1024) { client.ws.close(1013, 'Reconnect to refresh history'); continue; }
     client.ws.send(data);
@@ -229,7 +249,9 @@ function broadcastClipboard(item) {
 function broadcastFileAvailable(file) {
   if (activePolicy.allows('file')) broadcastRaw(JSON.stringify({ type: 'file-available', ...publicFile(file) }));
 }
-function broadcastSettings() { broadcastRaw(JSON.stringify({ type: 'settings', settings: activePolicy.get() })); }
+function broadcastSettings() {
+  for (const client of clients) if (client.ws.readyState === WebSocket.OPEN) client.ws.send(JSON.stringify({ type: 'settings', settings: client.settings() }));
+}
 module.exports = { createServer, broadcastRaw, broadcastClipboard, broadcastFileAvailable, broadcastSettings,
   getConnectedDevices: () => Array.from(clients, deviceInfo),
   onDeviceConnect: (cb) => connectCallbacks.push(cb),

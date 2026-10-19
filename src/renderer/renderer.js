@@ -60,7 +60,12 @@
   // ---------- Toast Notifications ----------
   function showToast(message, type = 'success') {
     if (!dom.toastContainer) return;
+    const existing = [...dom.toastContainer.children].find(node => node.dataset.message === message);
+    if (existing) existing.remove();
+    while (dom.toastContainer.children.length >= 2) dom.toastContainer.firstElementChild.remove();
     const toast = document.createElement('div');
+    toast.dataset.message = message;
+    toast.setAttribute('role', type === 'error' ? 'alert' : 'status');
     toast.className = `toast ${type}`;
     toast.innerHTML = `
       <span>${type === 'success' ? '✓' : '⚠'}</span>
@@ -70,7 +75,8 @@
 
     setTimeout(() => {
       toast.classList.add('dismiss');
-      toast.addEventListener('animationend', () => toast.remove());
+      toast.addEventListener('animationend', () => toast.remove(), { once: true });
+      setTimeout(() => toast.remove(), 300);
     }, 2800);
   }
 
@@ -92,7 +98,9 @@
     });
 
     dom.tabPanels.forEach((panel) => {
-      panel.classList.toggle('active', panel.id === `panel-${tabName}`);
+      const active = panel.id === `panel-${tabName}`;
+      panel.classList.toggle('active', active);
+      panel.inert = !active;
     });
   }
 
@@ -111,29 +119,50 @@
   });
 
   // ---------- QR Code & Server URL ----------
+  let pairingBusy = false;
+  let pairingExpiry;
+  function clearPairingCode() {
+    clearTimeout(pairingExpiry);
+    dom.qrImage.removeAttribute('src');
+    dom.qrImage.classList.remove('loaded');
+    $('#qrPlaceholderText').textContent = 'Create pairing code';
+    $('#createPairingBtn').setAttribute('aria-label', 'Create pairing code');
+  }
   async function loadQRCode() {
+    if (pairingBusy) return;
+    pairingBusy = true;
+    clearPairingCode();
+    const buttons = [$('#createPairingBtn'), $('#newPairingBtn')];
+    buttons.forEach(button => { button.disabled = true; button.setAttribute('aria-busy', 'true'); });
+    $('#qrPlaceholderText').textContent = 'Creating pairing code…';
+    $('#newPairingBtn').textContent = 'Creating pairing code…';
     try {
       const qrDataUrl = await window.quickclip.getQRCode();
-      if (!qrDataUrl) {
-        dom.qrImage.removeAttribute('src'); dom.qrImage.classList.remove('loaded');
-        showToast('Enable remote access in Settings to generate a pairing code', 'error');
-      }
-      if (qrDataUrl && dom.qrImage) {
-        dom.qrImage.src = qrDataUrl;
-        dom.qrImage.classList.add('loaded');
-        if (dom.qrPlaceholder) dom.qrPlaceholder.classList.add('hidden');
-      }
+      if (!qrDataUrl) throw new Error('Could not create a code. Check remote access in Settings and try again.');
+      dom.qrImage.src = qrDataUrl;
+      dom.qrImage.classList.add('loaded');
+      $('#createPairingBtn').setAttribute('aria-label', 'Create a new pairing code');
+      pairingExpiry = setTimeout(clearPairingCode, 5 * 60 * 1000);
+      showToast('Pairing code ready. Scan it within five minutes.');
     } catch (err) {
-      console.error('Failed to load QR code:', err);
+      clearPairingCode();
+      showToast(err.message || 'Could not create a pairing code. Try again.', 'error');
+    } finally {
+      pairingBusy = false;
+      buttons.forEach(button => { button.disabled = false; button.removeAttribute('aria-busy'); });
+      $('#newPairingBtn').textContent = 'New pairing code';
     }
   }
+  $('#createPairingBtn').addEventListener('click', loadQRCode);
 
   if (dom.serverUrlWrap) {
-    dom.serverUrlWrap.addEventListener('click', () => {
+    dom.serverUrlWrap.addEventListener('click', async () => {
       const urlText = dom.serverUrl ? dom.serverUrl.textContent : '';
       if (urlText) {
-        navigator.clipboard.writeText(urlText);
-        showToast('Server URL copied to clipboard!');
+        try {
+          await navigator.clipboard.writeText(urlText);
+          showToast('Server URL copied');
+        } catch (_) { showToast('Could not copy server URL', 'error'); }
       }
     });
   }
@@ -209,30 +238,183 @@
   if (dom.settingSyncFiles) dom.settingSyncFiles.addEventListener('change', saveSettings);
   if (dom.settingMaxHistory) dom.settingMaxHistory.addEventListener('change', saveSettings);
 
+  const deviceDrawer = $('#deviceDrawer');
+  function measureDeviceNames() {
+    if (!deviceDrawer.open) return;
+    deviceDrawer.querySelectorAll('.device-name').forEach(heading => {
+      const text = heading.firstElementChild;
+      const overflow = Math.max(0, text.scrollWidth - heading.clientWidth);
+      heading.classList.toggle('overflows', overflow > 1);
+      heading.style.setProperty('--name-travel', '-' + overflow + 'px');
+      heading.style.setProperty('--name-duration', Math.max(5, overflow / 24 + 3) + 's');
+    });
+  }
+  new ResizeObserver(measureDeviceNames).observe($('#drawerDeviceList'));
+  let drawerSignature = '';
+  let drawerCloseTimer;
+  function closeDeviceDrawer() {
+    if (!deviceDrawer.open || deviceDrawer.classList.contains('closing')) return;
+    deviceDrawer.classList.add('closing');
+    drawerCloseTimer = setTimeout(() => {
+      deviceDrawer.close();
+      deviceDrawer.classList.remove('closing');
+      dom.connectionBadge.setAttribute('aria-expanded', 'false');
+      dom.connectionBadge.focus();
+    }, window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 120);
+  }
+  dom.connectionBadge.addEventListener('click', async () => {
+    clearTimeout(drawerCloseTimer);
+    deviceDrawer.classList.remove('closing');
+    deviceDrawer.showModal();
+    requestAnimationFrame(measureDeviceNames);
+    dom.connectionBadge.setAttribute('aria-expanded', 'true');
+    $('#closeDeviceDrawer').focus();
+    $('#deviceDrawerStatus').textContent = 'Loading devices…';
+    try { await refreshDevices(); $('#deviceDrawerStatus').textContent = ''; }
+    catch (_) { $('#deviceDrawerStatus').textContent = 'Could not load devices. Close and reopen to retry.'; }
+  });
+  $('#closeDeviceDrawer').addEventListener('click', closeDeviceDrawer);
+  deviceDrawer.addEventListener('cancel', event => { event.preventDefault(); closeDeviceDrawer(); });
+  deviceDrawer.addEventListener('click', event => {
+    const bounds = deviceDrawer.getBoundingClientRect();
+    if (event.target === deviceDrawer && (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom)) closeDeviceDrawer();
+  });
+  function renderDrawerDevices(devices) {
+    const signature = JSON.stringify(devices);
+    if (signature === drawerSignature) return;
+    drawerSignature = signature;
+    const list = $('#drawerDeviceList');
+    const focused = document.activeElement?.dataset.control;
+    list.replaceChildren();
+    if (!devices.length) {
+      const empty = document.createElement('p');
+      empty.className = 'drawer-description';
+      empty.textContent = 'No paired devices. Create a pairing code in the Pair tab to connect your phone.';
+      list.append(empty);
+    }
+    for (const device of devices) {
+      const card = document.createElement('section'); card.className = 'device-card';
+      const identity = document.createElement('div'); identity.className = 'device-identity';
+      const heading = document.createElement('h3'); heading.className = 'device-name'; heading.title = device.name;
+      const name = document.createElement('span'); name.textContent = device.name; heading.append(name);
+      const status = document.createElement('p'); status.className = 'drawer-description';
+      const permissions = { view: true, write: true, access: true, ...device.permissions };
+      status.textContent = !permissions.access ? 'Access off' : device.connected ? 'Connected' : 'Offline';
+      identity.append(heading, status); card.append(identity);
+      const controls = document.createElement('div'); controls.className = 'device-controls';
+      const actions = document.createElement('div'); actions.className = 'device-permissions';
+      for (const [key, title, description] of [
+        ['access', 'Access', 'Allow this device to connect without pairing again'],
+        ['view', 'View', 'Read shared clipboard items and download files'],
+        ['write', 'Write', 'Send clipboard items and files to this computer'],
+      ]) {
+        const control = document.createElement('button');
+        control.type = 'button'; control.className = 'device-permission';
+        const enabled = permissions[key];
+        const paths = key === 'access' ? '<path d="m6 6 12 12M18 6 6 18"/>' : key === 'view' ? (enabled
+            ? '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>'
+            : '<path d="m3 3 18 18M10.6 5.1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-3 3.8M6.2 6.2A20 20 0 0 0 2 12s3.5 7 10 7a12 12 0 0 0 5.8-1.5M10 10a3 3 0 0 0 4 4"/>')
+          : enabled ? '<path d="m15 5 4 4M4 20l5-1L20 8a2.8 2.8 0 0 0-4-4L5 15l-1 5Z"/>'
+            : '<path d="m15 5 4 4M13 7l3-3a2.8 2.8 0 0 1 4 4l-4 4-3-1 1-3-1-1ZM10 11l-5 4-1 5 5-1 4-5-3 1 1-3-1-1Z"/>';
+        control.innerHTML = '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
+        control.setAttribute('aria-label', title);
+        control.setAttribute('aria-pressed', String(enabled));
+        control.title = title + ': ' + (enabled ? 'on' : 'off') + '. Click to turn ' + (enabled ? 'off' : 'on') + '. ' + description;
+        control.dataset.control = device.id + ':' + key;
+        control.disabled = key !== 'access' && !permissions.access;
+        control.addEventListener('click', async () => {
+          control.disabled = true;
+          $('#deviceDrawerStatus').textContent = 'Saving permissions…';
+          try {
+            await window.quickclip.setDevicePermissions(device.id, { [key]: !enabled });
+            await refreshDevices(); await refreshStatus();
+            $('#deviceDrawerStatus').textContent = title + ' updated';
+          } catch (_) {
+            $('#deviceDrawerStatus').textContent = 'Could not save permission. Try again.';
+          } finally { control.disabled = key !== 'access' && !permissions.access; }
+        });
+        actions.append(control);
+      }
+      controls.append(actions);
+      const remove = document.createElement('button'); remove.className = 'device-remove'; remove.textContent = 'Remove'; remove.setAttribute('aria-label', 'Remove ' + device.name);
+      remove.dataset.control = device.id + ':remove';
+      remove.addEventListener('click', async () => {
+        if (!window.confirm('Remove ' + device.name + '? A new pairing code will be required to connect again.')) return;
+        remove.disabled = true;
+        try {
+          await window.quickclip.revokeDevice(device.id); clearPairingCode();
+          await refreshDevices(); await refreshStatus();
+          $('#deviceDrawerStatus').textContent = 'Device removed';
+          $('#closeDeviceDrawer').focus();
+        } catch (_) { remove.disabled = false; $('#deviceDrawerStatus').textContent = 'Could not remove device. Try again.'; }
+      });
+      controls.append(remove); card.append(controls); list.append(card);
+    }
+    requestAnimationFrame(measureDeviceNames);
+    if (focused) [...list.querySelectorAll('[data-control]')].find(node => node.dataset.control === focused)?.focus();
+  }
+
+  let settingsDevicesSignature = '';
   async function refreshDevices() {
     const container = $('#trustedDevices');
     const devices = await window.quickclip.getTrustedDevices();
+    renderDrawerDevices(devices);
+    const signature = JSON.stringify(devices);
+    if (signature === settingsDevicesSignature) return;
+    settingsDevicesSignature = signature;
+    const focused = document.activeElement?.dataset.settingsDeviceControl;
     container.replaceChildren();
     if (!devices.length) container.textContent = 'No trusted devices';
     for (const device of devices) {
-      const row = document.createElement('div'); row.className = 'settings-row';
-      const label = document.createElement('span'); label.textContent = device.name + ' · ' + new Date(device.pairedAt).toLocaleString();
-      const button = document.createElement('button'); button.className = 'btn btn-ghost btn-sm'; button.textContent = 'Revoke';
+      const row = document.createElement('div'); row.className = 'settings-row settings-device-row';
+      const label = document.createElement('div'); label.className = 'settings-label settings-device-name';
+      const name = document.createElement('span'); name.className = 'settings-title'; name.textContent = device.name; name.title = device.name;
+      const paired = document.createElement('span'); paired.className = 'settings-desc'; paired.textContent = device.connected ? 'Connected' : 'Offline'; paired.title = 'Paired ' + new Date(device.pairedAt).toLocaleString();
+      label.append(name, paired);
+      const controls = document.createElement('div'); controls.className = 'settings-device-controls';
+      const permissions = { write: true, access: true, view: true, ...device.permissions };
+      for (const [key, title, help] of [
+        ['write', 'Write', 'Send clipboard items and files to this computer'],
+        ['access', 'Access', 'Allow this device to connect without pairing again'],
+        ['view', 'View', 'Read shared clipboard items and download files'],
+      ]) {
+        const group = document.createElement('div'); group.className = 'settings-device-toggle';
+        const caption = document.createElement('label'); caption.textContent = title;
+        const toggle = document.createElement('label'); toggle.className = 'apple-switch'; toggle.title = help;
+        const input = document.createElement('input'); input.type = 'checkbox'; input.checked = permissions[key];
+        input.id = 'device-setting-' + device.id + '-' + key; caption.htmlFor = input.id;
+        input.dataset.settingsDeviceControl = device.id + ':' + key;
+        input.disabled = key !== 'access' && !permissions.access;
+        const slider = document.createElement('span'); slider.className = 'switch-slider'; slider.setAttribute('aria-hidden', 'true');
+        input.addEventListener('change', async () => {
+          input.disabled = true;
+          try {
+            await window.quickclip.setDevicePermissions(device.id, { [key]: input.checked });
+            await refreshDevices(); await refreshStatus();
+          } catch (_) {
+            input.checked = permissions[key];
+            showToast('Could not save device permission. Try again.', 'error');
+          } finally { input.disabled = key !== 'access' && !permissions.access; }
+        });
+        toggle.append(input, slider); group.append(caption, toggle); controls.append(group);
+      }
+      const button = document.createElement('button'); button.className = 'device-remove settings-device-remove'; button.textContent = 'Remove'; button.setAttribute('aria-label', 'Remove ' + device.name);
       button.addEventListener('click', async () => {
-        try { await window.quickclip.revokeDevice(device.id); await refreshDevices(); await refreshStatus(); }
+        try { await window.quickclip.revokeDevice(device.id); clearPairingCode(); await refreshDevices(); await refreshStatus(); }
         catch (_) { showToast('Could not revoke device', 'error'); }
       });
-      row.append(label, button); container.append(row);
+      controls.append(button); row.append(label, controls); container.append(row);
     }
+    if (focused) [...container.querySelectorAll('[data-settings-device-control]')].find(node => node.dataset.settingsDeviceControl === focused)?.focus();
   }
   for (const id of ['settingRemoteAccess', 'settingClipboardTtl', 'settingFileTtl', 'settingStorageQuota']) {
     $('#' + id).addEventListener('change', saveSettings);
   }
-  $('#newPairingBtn').addEventListener('click', async () => { await loadQRCode(); switchTab('pair'); });
+  $('#newPairingBtn').addEventListener('click', () => { switchTab('pair'); loadQRCode(); });
   $('#disconnectAllBtn').addEventListener('click', async () => {
     try {
       await window.quickclip.disconnectAll();
-      dom.qrImage.removeAttribute('src'); dom.qrImage.classList.remove('loaded');
+      clearPairingCode();
       await refreshDevices(); await refreshStatus();
       showToast('All devices removed. Generate a new code to pair again.');
     } catch (_) { showToast('Could not disconnect devices', 'error'); }
@@ -297,24 +479,53 @@
       </div>
     `;
 
-    el.querySelector('.clip-copy-btn').addEventListener('click', async () => {
+    const copyButton = el.querySelector('.clip-copy-btn');
+    copyButton.addEventListener('click', async () => {
+      copyButton.disabled = true;
+      copyButton.textContent = 'Copying…';
       try {
         const result = await window.quickclip.copyHistoryItem(item.id);
         if (!result.ok) throw new Error(result.error);
-        showToast('Copied to clipboard!');
+        copyButton.textContent = 'Copied ✓';
       } catch (err) {
         showToast(err.message || 'Copy failed', 'error');
+      } finally {
+        setTimeout(() => { copyButton.disabled = false; copyButton.textContent = 'Copy'; }, 1200);
       }
     });
 
     return el;
   }
 
+  // Keep unchanged rows mounted so polling does not replay animations or lose focus.
+  function reconcileRows(container, items, render) {
+    const existing = new Map([...container.children].map(row => [row.dataset.id, row]));
+    const keep = new Set();
+    items.forEach((item, index) => {
+      const id = String(item.id);
+      const signature = JSON.stringify(item);
+      let row = existing.get(id);
+      if (!row || row.dataset.signature !== signature) {
+        const next = render(item);
+        next.dataset.id = id;
+        next.dataset.signature = signature;
+        if (row) row.replaceWith(next);
+        row = next;
+      }
+      keep.add(row);
+      if (container.children[index] !== row) container.insertBefore(row, container.children[index] || null);
+      const time = row.querySelector('.clip-time, .file-meta span:last-child');
+      if (time) time.textContent = relativeTime(item.date || item.timestamp);
+    });
+    [...container.children].forEach(row => { if (!keep.has(row)) row.remove(); });
+  }
+
   async function refreshHistory() {
     try {
       const history = await window.quickclip.getHistory();
       if (!dom.clipboardList) return;
-      dom.clipboardList.innerHTML = '';
+      reconcileRows(dom.clipboardList, history || [], renderClipboardItem);
+      dom.clearHistoryBtn.disabled = !history?.length;
 
       if (!history || history.length === 0) {
         if (dom.clipboardEmpty) dom.clipboardEmpty.classList.add('visible');
@@ -325,9 +536,7 @@
       if (dom.clipboardEmpty) dom.clipboardEmpty.classList.remove('visible');
       dom.clipboardList.style.display = 'flex';
 
-      history.forEach((item) => {
-        dom.clipboardList.appendChild(renderClipboardItem(item));
-      });
+
     } catch (err) {
       console.error('Failed to refresh clipboard history:', err);
     }
@@ -445,7 +654,7 @@
       try { await window.quickclip.deleteFile(file.id); await refreshFiles(); }
       catch (_) { showToast('Could not delete saved copy', 'error'); }
     });
-    el.append(remove);
+    el.querySelector('.file-actions').append(remove);
     return el;
   }
 
@@ -453,7 +662,7 @@
     try {
       const files = await window.quickclip.getFiles();
       if (!dom.filesList) return;
-      dom.filesList.innerHTML = '';
+      reconcileRows(dom.filesList, sortFiles(files || [], getFileSort()), renderFileItem);
 
       if (!files || files.length === 0) {
         if (dom.filesEmpty) dom.filesEmpty.classList.add('visible');
@@ -464,9 +673,7 @@
       if (dom.filesEmpty) dom.filesEmpty.classList.remove('visible');
       dom.filesList.style.display = 'flex';
 
-      sortFiles(files, getFileSort()).forEach((file) => {
-        dom.filesList.appendChild(renderFileItem(file));
-      });
+
     } catch (err) {
       console.error('Failed to refresh files:', err);
     }
@@ -488,7 +695,10 @@
     dom.setupToggle.addEventListener('click', () => {
       const expanded = dom.setupToggle.getAttribute('aria-expanded') === 'true';
       dom.setupToggle.setAttribute('aria-expanded', String(!expanded));
-      if (dom.setupContent) dom.setupContent.classList.toggle('open', !expanded);
+      if (dom.setupContent) {
+        dom.setupContent.classList.toggle('open', !expanded);
+        dom.setupContent.inert = expanded;
+      }
     });
   }
 
@@ -508,15 +718,20 @@
   // ---------- Share File with Mobile ----------
   if (dom.sendFilesBtn) {
     dom.sendFilesBtn.addEventListener('click', async () => {
+      dom.sendFilesBtn.disabled = true;
+      dom.sendFilesBtn.setAttribute('aria-busy', 'true');
       try {
         const sent = await window.quickclip.selectAndSendFiles();
         if (sent && sent.length > 0) {
           refreshFiles();
-          showToast(`Shared ${sent.length} file(s) with mobile devices!`);
+          showToast(`${sent.length} file(s) ready to share`);
         }
       } catch (err) {
         console.error('Failed to share files:', err);
         showToast(err.message || 'Failed to share file', 'error');
+      } finally {
+        dom.sendFilesBtn.disabled = false;
+        dom.sendFilesBtn.removeAttribute('aria-busy');
       }
     });
   }
@@ -589,13 +804,14 @@
     ripple.style.top = `${y}px`;
     el.appendChild(ripple);
 
-    ripple.addEventListener('animationend', () => ripple.remove());
+    ripple.addEventListener('animationend', () => ripple.remove(), { once: true });
+    setTimeout(() => ripple.remove(), 550);
   }
 
   function initRipples() {
     document.querySelectorAll('.btn, .accordion-trigger, .server-url-wrap').forEach((el) => {
       el.addEventListener('click', addRipple);
-      el.addEventListener('touchstart', addRipple, { passive: true });
+
     });
   }
 
@@ -631,8 +847,10 @@
 
   // ---------- Initialise ----------
   async function init() {
+    switchTab('pair');
+    dom.setupContent.inert = true;
     await Promise.all([
-      loadQRCode(),
+
       refreshStatus(),
       refreshHistory(),
       refreshFiles(),
