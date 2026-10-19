@@ -56,8 +56,9 @@ test('image history stores metadata, copies full bytes, prunes and clears files'
   assert.equal(monitor.copyHistoryItem(result.id).ok, true);
   assert.deepEqual(electron.state.image, image);
   monitor.writeToClipboard({ type: 'text', content: 'next' });
-  assert.equal(fs.existsSync(imagePath), false);
+  assert.equal(fs.existsSync(imagePath), true);
   policy.update({ maxHistory: 1 }); monitor.trimHistory();
+  assert.equal(fs.existsSync(imagePath), false);
   assert.equal(monitor.getHistory().length, 1);
   monitor.clearHistory();
   assert.deepEqual(fs.readdirSync(path.join(dataDir, 'clipboard-images')), []);
@@ -90,6 +91,53 @@ test('remote writes do not echo and a new local change is detected immediately',
   assert.equal(events.length, 2);
   assert.equal(monitor.writeToClipboard({ type: 'text', content: 'disabled' }).ok, false);
 });
+
+for (const type of ['text', 'image']) {
+  test(`copying received ${type} history does not echo, including while sync is paused`, (t) => {
+    const electron = fakeElectron(), policy = createPolicy();
+    let poll;
+    const monitor = load('src/main/clipboard-monitor.js', { electron }, {
+      setInterval: (callback) => { poll = callback; return 1; }, clearInterval() {},
+    });
+    const dataDir = temporary(t);
+    monitor.configure({ dataDir, syncPolicy: policy });
+    monitor.startMonitoring();
+    const outbound = [], events = [];
+    monitor.onClipboardChange((item) => {
+      events.push(item);
+      if (item.source === 'local') outbound.push(item);
+    });
+    const content = type === 'text' ? 'from iPhone' : pngHeader;
+    const received = monitor.writeToClipboard({ type, content });
+    assert.equal(received.ok, true);
+    electron.clipboard.writeText('another Windows copy'); poll();
+    assert.equal(outbound.length, 1);
+    const originalHistory = JSON.stringify(monitor.getHistory());
+    for (const paused of [false, true]) {
+      policy.pause(paused);
+      const copied = monitor.copyHistoryItem(received.id);
+      assert.equal(copied.ok, true);
+      assert.equal(copied.id, received.id);
+      if (type === 'text') assert.equal(electron.state.text, content);
+      else assert.deepEqual(electron.state.image, content);
+      poll(); poll();
+      assert.equal(outbound.length, 1);
+      assert.equal(events.length, 2);
+      assert.equal(JSON.stringify(monitor.getHistory()), originalHistory);
+      if (type === 'image') assert.equal(fs.readdirSync(path.join(dataDir, 'clipboard-images')).length, 1);
+    }
+    policy.pause(false); poll();
+    electron.clipboard.writeText('new Windows copy'); poll();
+    assert.equal(outbound.length, 2);
+    assert.equal(outbound[1].content, 'new Windows copy');
+    assert.equal(monitor.copyHistoryItem(outbound[0].id).ok, true);
+    poll();
+    assert.equal(outbound.length, 2);
+    assert.equal(events.length, 3);
+    assert.equal(monitor.getHistory().length, 3);
+    assert.equal(electron.state.text, 'another Windows copy');
+  });
+}
 
 test('settings reject invalid values without mutating current policy', () => {
   const policy = createPolicy();

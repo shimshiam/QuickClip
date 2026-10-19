@@ -118,9 +118,9 @@ function seed() {
 function startMonitoring() { if (!timer) { seed(); timer = setInterval(poll, 500); } }
 function stopMonitoring() { clearInterval(timer); timer = null; }
 
-function writeToClipboard(item, source = 'remote') {
+function writeToClipboard(item, source = 'remote', { fromHistory = false } = {}) {
   try {
-    if (source === 'remote') policy.assert(item.type);
+    if (source === 'remote' && !fromHistory) policy.assert(item.type);
     let value = item.content;
     let img;
     if (item.type === 'text') {
@@ -136,6 +136,8 @@ function writeToClipboard(item, source = 'remote') {
     } else throw new Error('Unsupported clipboard type');
     // Track both formats instead of suppressing every change for one second.
     seed();
+    // History copies only restore the clipboard; they are not new history events.
+    if (fromHistory) return { ok: true, id: item.id };
     const entry = record(item.type, value, source, img);
     notify(entry);
     return { ok: true, id: entry.id };
@@ -147,7 +149,8 @@ function copyHistoryItem(id) {
   if (!item) return { ok: false, error: 'This history item has expired' };
   try {
     const content = item.type === 'image' ? fs.readFileSync(getImagePath(id)) : item.content;
-    return writeToClipboard({ type: item.type, content }, 'local');
+    // Re-copying received content must not turn it into an outbound local update.
+    return writeToClipboard({ id: item.id, type: item.type, content }, item.source, { fromHistory: true });
   } catch (_) { return { ok: false, error: 'The clipboard image is no longer available' }; }
 }
 
