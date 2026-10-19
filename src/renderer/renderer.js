@@ -236,6 +236,73 @@
     }
   }
 
+  function permissionIcon(key, enabled) {
+    const paths = key === 'access' ? '<path d="m6 6 12 12M18 6 6 18"/>' : key === 'view' ? (enabled
+        ? '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>'
+        : '<path d="m3 3 18 18M10.6 5.1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-3 3.8M6.2 6.2A20 20 0 0 0 2 12s3.5 7 10 7a12 12 0 0 0 5.8-1.5M10 10a3 3 0 0 0 4 4"/>')
+      : enabled ? '<path d="m15 5 4 4M4 20l5-1L20 8a2.8 2.8 0 0 0-4-4L5 15l-1 5Z"/>'
+        : '<path d="m15 5 4 4M13 7l3-3a2.8 2.8 0 0 1 4 4l-4 4-3-1 1-3-1-1ZM10 11l-5 4-1 5 5-1 4-5-3 1 1-3-1-1Z"/>';
+    return '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
+  }
+
+  function reviewPasswordDevices(update, devices) {
+    const dialog = $('#passwordDeviceReview'), list = $('#passwordReviewDevices');
+    const rows = devices.map(device => ({ id: device.id, keep: true,
+      originalPermissions: { ...device.permissions }, permissions: { ...device.permissions } }));
+    function render() {
+      list.replaceChildren();
+      rows.forEach((row, index) => {
+        const device = devices[index], section = document.createElement('div');
+        section.className = 'review-device';
+        const name = document.createElement('strong'); name.className = 'review-device-name';
+        name.textContent = device.name + (device.connected ? ' · Connected' : ' · Offline');
+        const controls = document.createElement('div'); controls.className = 'review-device-controls';
+        const keep = document.createElement('button');
+        keep.type = 'button'; keep.className = 'review-keep';
+        keep.textContent = row.keep ? 'Keep' : 'Remove';
+        keep.setAttribute('aria-pressed', String(row.keep));
+        keep.setAttribute('aria-label', 'Keep ' + device.name);
+        keep.onclick = () => { row.keep = !row.keep; render(); };
+        controls.append(keep);
+        for (const [key, title] of [['access', 'Access'], ['view', 'View'], ['write', 'Write']]) {
+          const control = document.createElement('button');
+          control.type = 'button'; control.className = 'device-permission';
+          control.dataset.permission = key;
+          control.innerHTML = permissionIcon(key, row.permissions[key]);
+          control.setAttribute('aria-label', title + ' ' + device.name);
+          control.setAttribute('aria-pressed', String(row.permissions[key]));
+          control.title = title + ': ' + (row.permissions[key] ? 'on' : 'off');
+          control.disabled = !row.keep || (key !== 'access' && !row.permissions.access);
+          control.onclick = () => {
+            row.permissions[key] = !row.permissions[key]; render();
+            list.children[index].querySelector('[data-permission="' + key + '"]').focus();
+          };
+          controls.append(control);
+        }
+        section.append(name, controls); list.append(section);
+      });
+    }
+    render(); $('#passwordReviewError').textContent = '';
+    return new Promise(resolve => {
+      let saving = false;
+      dialog.oncancel = event => { if (saving) event.preventDefault(); };
+      dialog.onclose = () => resolve(false);
+      $('#reviewCancel').onclick = () => dialog.close();
+      $('#reviewKeepAll').onclick = () => { rows.forEach(row => { row.keep = true; }); render(); };
+      $('#reviewRemoveAll').onclick = () => { rows.forEach(row => { row.keep = false; }); render(); };
+      $('#reviewApply').onclick = async () => {
+        saving = true;
+        dialog.querySelectorAll('button, input').forEach(node => { node.disabled = true; });
+        try {
+          if (!await window.quickclip.updateSettings({ ...update, deviceReview: rows })) throw new Error('Could not apply changes. Cancel and reopen the review if devices or permissions changed.');
+          dialog.onclose = null; dialog.close(); resolve(true);
+        } catch (err) { $('#passwordReviewError').textContent = err.message; }
+        finally { saving = false; dialog.querySelectorAll('button').forEach(node => { node.disabled = false; }); render(); }
+      };
+      dialog.showModal();
+    });
+  }
+
   async function savePairingPassword(event) {
     event?.preventDefault();
     const toggle = $('#requirePasscode');
@@ -251,7 +318,10 @@
     try {
       const update = { requirePasscode: toggle.checked };
       if (toggle.checked && input.value) update.pairingPassword = input.value;
-      if (!await window.quickclip.updateSettings(update)) throw new Error('Could not save joining password');
+      const devices = update.pairingPassword && settings.hasPairingPassword ? await window.quickclip.getTrustedDevices() : [];
+      if (devices.some(device => device.connected)) {
+        if (!await reviewPasswordDevices(update, devices)) return;
+      } else if (!await window.quickclip.updateSettings(update)) throw new Error('Could not save joining password');
       input.value = '';
       await refreshSettings();
       clearPairingCode();
@@ -340,12 +410,7 @@
         const control = document.createElement('button');
         control.type = 'button'; control.className = 'device-permission';
         const enabled = permissions[key];
-        const paths = key === 'access' ? '<path d="m6 6 12 12M18 6 6 18"/>' : key === 'view' ? (enabled
-            ? '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/>'
-            : '<path d="m3 3 18 18M10.6 5.1 12 5c6.5 0 10 7 10 7a18 18 0 0 1-3 3.8M6.2 6.2A20 20 0 0 0 2 12s3.5 7 10 7a12 12 0 0 0 5.8-1.5M10 10a3 3 0 0 0 4 4"/>')
-          : enabled ? '<path d="m15 5 4 4M4 20l5-1L20 8a2.8 2.8 0 0 0-4-4L5 15l-1 5Z"/>'
-            : '<path d="m15 5 4 4M13 7l3-3a2.8 2.8 0 0 1 4 4l-4 4-3-1 1-3-1-1ZM10 11l-5 4-1 5 5-1 4-5-3 1 1-3-1-1Z"/>';
-        control.innerHTML = '<svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' + paths + '</svg>';
+        control.innerHTML = permissionIcon(key, enabled);
         control.setAttribute('aria-label', title);
         control.setAttribute('aria-pressed', String(enabled));
         control.title = title + ': ' + (enabled ? 'on' : 'off') + '. Click to turn ' + (enabled ? 'off' : 'on') + '. ' + description;

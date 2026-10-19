@@ -266,7 +266,13 @@ function registerIPCHandlers() {
       if (validated.requirePasscode && !pairingPasswordHash) throw new Error('Set a joining password first');
       const pairingChanged = validated.requirePasscode !== syncPolicy.get().requirePasscode || pairingPasswordHash !== config.pairingPasswordHash;
       const nextConfig = { ...config, settings: validated, pairingPasswordHash };
-      saveConfig(nextConfig);
+      if (settings.deviceReview !== undefined) {
+        if (!('pairingPassword' in settings)) throw new Error('Device review requires a password change');
+        devices.applyReview(settings.deviceReview, () => saveConfig(nextConfig));
+      } else {
+        if ('pairingPassword' in settings && config.pairingPasswordHash && getConnectedDevices().length) throw new Error('Review connected devices before changing the password');
+        saveConfig(nextConfig);
+      }
       config = nextConfig;
       syncPolicy.update(validated);
       if (pairingChanged) devices.invalidateInvitation();

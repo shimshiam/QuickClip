@@ -64,6 +64,26 @@ function createDeviceStore(dataDir, now = Date.now) {
       return true;
     },
     onChange(listener) { changeListeners.push(listener); },
+    applyReview(review, saveSettings) {
+      if (!Array.isArray(review) || review.length !== devices.length
+        || new Set(review.map(row => row?.id)).size !== devices.length) throw new Error('Device list changed. Reopen the review.');
+      const next = devices.flatMap(device => {
+        const row = review.find(row => row?.id === device.id);
+        if (!row || typeof row.keep !== 'boolean' || !row.permissions || !row.originalPermissions
+          || ['access', 'view', 'write'].some(key => typeof row.permissions[key] !== 'boolean'
+            || row.originalPermissions[key] !== permissions(device)[key])) throw new Error('Device permissions changed. Reopen the review.');
+        return row.keep ? [{ ...device, permissions: { access: row.permissions.access, view: row.permissions.view, write: row.permissions.write } }] : [];
+      });
+      const previous = devices;
+      commit(next);
+      try { saveSettings(); }
+      catch (err) { commit(previous); throw err; }
+      invitation = null;
+      for (const device of previous) {
+        if (!next.some(row => row.id === device.id)) listeners.forEach(listener => listener(device.id));
+        else changeListeners.forEach(listener => listener(device.id));
+      }
+    },
     has: (id) => devices.some((device) => device.id === id),
     list: () => devices.map(({ tokenHash, ...device }) => ({ ...device, permissions: permissions(device) })),
     revoke(id) {

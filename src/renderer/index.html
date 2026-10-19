@@ -340,6 +340,14 @@
   </footer>
 
   <div class="toast-container" id="toastContainer"></div>
+  <dialog id="passwordDeviceReview" class="password-review" aria-labelledby="passwordReviewTitle">
+    <h2 id="passwordReviewTitle">Change password</h2>
+    <p>Keep or remove devices and adjust permissions before saving. Removed devices must pair again.</p>
+    <div class="review-actions"><button type="button" class="btn btn-ghost btn-sm" id="reviewKeepAll">Keep all</button><button type="button" class="btn btn-ghost btn-sm" id="reviewRemoveAll">Remove all</button></div>
+    <div id="passwordReviewDevices"></div>
+    <p id="passwordReviewError" role="alert"></p>
+    <div class="review-actions review-footer"><button type="button" class="btn btn-ghost" id="reviewCancel">Cancel</button><button type="button" class="btn btn-accent" id="reviewApply">Save changes</button></div>
+  </dialog>
 
   <script src="renderer.js"></script>
 </body>

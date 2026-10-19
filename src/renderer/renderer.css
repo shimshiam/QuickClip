@@ -1339,6 +1339,34 @@ body::after {
 .pair-description span { display: block; margin-top: 4px; }
 
 /* Compact home screen: pairing first, access controls together. */
+.password-review { margin: auto; width: min(460px, calc(100vw - 32px)); max-height: calc(100dvh - 48px); overflow-y: auto; padding: 22px; border: 1px solid var(--border-light); border-radius: 16px; background: var(--bg-card); color: var(--text-primary); box-shadow: var(--shadow-lg); }
+.password-review::backdrop { background: #0008; }
+.password-review h2 { font-size: 18px; line-height: 1.3; margin-bottom: 10px; }
+.password-review p { font-size: 13px; line-height: 1.5; margin-bottom: 12px; color: var(--text-secondary); }
+.review-actions { display: flex; gap: 8px; margin-bottom: 14px; }
+.review-footer { justify-content: flex-end; margin: 16px 0 0; }
+.password-review .review-legend { font-size: 12px; }
+.review-device { padding: 12px 0; border-top: 1px solid var(--border-light); }
+.review-device-name { display: block; overflow-wrap: anywhere; font-size: 13px; margin-bottom: 10px; }
+.review-device-controls { display: flex; gap: 16px; flex-wrap: wrap; font-size: 13px; }
+.review-device-controls label { display: flex; align-items: center; gap: 5px; }
+.review-device-controls input { accent-color: var(--accent-blue); width: 16px; height: 16px; }
+.password-review { padding: 18px; width: min(440px, calc(100vw - 32px)); }
+.password-review h2 { margin-bottom: 6px; }
+.password-review .review-actions { gap: 6px; margin-bottom: 10px; }
+.password-review .btn, .review-keep { background: transparent; box-shadow: none; text-shadow: none; border: 1px solid var(--border-light); border-radius: 7px; color: var(--text-primary); font: inherit; font-size: 12px; padding: 7px 11px; cursor: pointer; }
+.password-review .btn::before, .password-review .btn::after { display: none; }
+.password-review .btn:hover, .review-keep:hover { background: var(--bg-hover); }
+.password-review #reviewApply { background: var(--accent-blue); border-color: var(--accent-blue); color: white; }
+.password-review .review-device { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 11px 0; }
+.password-review .review-device-name { margin: 0; min-width: 0; font-size: 12px; font-weight: 600; }
+.password-review .review-device-controls { flex-wrap: nowrap; gap: 5px; flex-shrink: 0; }
+.review-keep { min-width: 62px; margin-right: 5px; }
+.review-keep[aria-pressed="false"] { color: var(--danger); border-color: var(--danger); }
+.password-review #passwordReviewError:empty { display: none; }
+.password-review .review-footer { margin: 12px 0 0; }
+.review-keep:focus-visible, .password-review .btn:focus-visible { outline: 2px solid var(--accent-blue); outline-offset: 2px; }
+@media (max-width: 380px) { .password-review .review-device { flex-wrap: wrap; } }
 .pair-container { gap: 14px; max-width: 440px; }
 .pair-hero { display: grid; grid-template-columns: 176px 1fr; gap: 22px; align-items: center; width: 100%; padding: 4px 0 8px; }
 .pair-hero .qr-frame { width: 176px; height: 176px; border: 1px solid #c5cad4; border-radius: 14px; box-shadow: 0 4px 14px #0002; }

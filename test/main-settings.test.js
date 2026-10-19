@@ -78,6 +78,20 @@ test('application startup, IPC settings persistence, failure rollback and tray p
   assert.equal(third.ipc.get('update-settings')({}, { pairingPassword: 'Replacement! 99' }), true);
   assert.equal(third.options.devices.pair(beforeChange.token, 'Phone', 'My joining password! 42'), null);
   assert.equal(third.ipc.get('update-settings')({}, { pairingPassword: '' }), false);
+  const kept = third.options.devices.pair(third.options.devices.invite().token, 'Keep phone');
+  const removed = third.options.devices.pair(third.options.devices.invite().token, 'Remove tablet');
+  const review = third.options.devices.list().map(device => ({ id: device.id, keep: device.id === kept.deviceId,
+    originalPermissions: device.permissions, permissions: { ...device.permissions, write: false } }));
+  assert.equal(third.ipc.get('update-settings')({}, { pairingPassword: 'Reviewed password', deviceReview: review }), true);
+  assert.equal(third.options.devices.authenticate(removed.token), null);
+  assert.equal(third.options.devices.allows(kept.deviceId, 'write'), false);
+  const beforeFailure = JSON.parse(fs.readFileSync(path.join(data, 'config.json'))).pairingPasswordHash;
+  third.fail();
+  const failedReview = third.options.devices.list().map(device => ({ id: device.id, keep: false,
+    originalPermissions: device.permissions, permissions: device.permissions }));
+  assert.equal(third.ipc.get('update-settings')({}, { pairingPassword: 'Not saved', deviceReview: failedReview }), false);
+  assert.equal(third.options.devices.authenticate(kept.token), kept.deviceId);
+  assert.equal(JSON.parse(fs.readFileSync(path.join(data, 'config.json'))).pairingPasswordHash, beforeFailure);
   second.pause(true); assert.equal(second.options.policy.allows('text'), false);
   second.pause(false); assert.equal(second.options.policy.allows('text'), true);
 });

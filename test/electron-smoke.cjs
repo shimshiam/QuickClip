@@ -157,7 +157,11 @@ app.whenReady().then(async () => {
     'revoke-device': (_event, id) => server.devices.revoke(id),
     'disconnect-all': () => server.devices.revokeAll(),
     'copy-history-item': (_event, id) => monitor.copyHistoryItem(id),
-    'update-settings': (_event, settings) => { if (settings.pairingPassword) savedPasswordHash = hashPassword(settings.pairingPassword); policy.update(settings); server.enforceAccess(); monitor.trimHistory(); return true; },
+    'update-settings': (_event, settings) => {
+      const save = () => { if (settings.pairingPassword) savedPasswordHash = hashPassword(settings.pairingPassword); policy.update(settings); };
+      if (settings.deviceReview) server.devices.applyReview(settings.deviceReview, save); else save();
+      server.enforceAccess(); monitor.trimHistory(); return true;
+    },
   };
   for (const [name, handler] of Object.entries(handlers)) ipcMain.handle(name, handler);
   desktop = new BrowserWindow({ show: false, width: 520, height: 740, webPreferences: {
@@ -178,6 +182,32 @@ app.whenReady().then(async () => {
   await new Promise(resolve => setTimeout(resolve, 400));
   fs.writeFileSync(path.resolve(__dirname, '../.test-output/pairing-password-dark.png'), (await desktop.webContents.capturePage()).toPNG());
   await desktop.webContents.executeJavaScript("document.documentElement.classList.remove('dark-mode')");
+  const offline = server.devices.pair(server.devices.invite().token, 'Offline tablet');
+  const previousPasswordHash = savedPasswordHash;
+  await desktop.webContents.executeJavaScript("document.querySelector('#pairingPassword').value = 'Changed password!'; document.querySelector('#pairingPasswordForm').requestSubmit()");
+  await eventually(desktop, "document.querySelector('#passwordDeviceReview').open");
+  await desktop.webContents.executeJavaScript("document.querySelector('#reviewRemoveAll').click(); document.querySelector('#reviewCancel').click()");
+  assert.equal(server.devices.list().length, 2);
+  assert.equal(savedPasswordHash, previousPasswordHash);
+  await desktop.webContents.executeJavaScript("document.querySelector('#pairingPasswordForm').requestSubmit()");
+  await eventually(desktop, "document.querySelector('#passwordDeviceReview').open");
+  await desktop.webContents.executeJavaScript(`
+    document.querySelector('#reviewRemoveAll').click(); document.querySelector('#reviewKeepAll').click();
+    const rows = document.querySelectorAll('.review-device');
+    rows[0].querySelector('[data-permission=write]').click();
+    document.querySelectorAll('.review-device')[1].querySelector('.review-keep').click();
+  `);
+  await new Promise(resolve => setTimeout(resolve, 400));
+  fs.writeFileSync(path.resolve(__dirname, '../.test-output/password-device-review.png'), (await desktop.webContents.capturePage()).toPNG());
+  assert.equal(server.devices.list().length, 2);
+  assert.equal(savedPasswordHash, previousPasswordHash);
+  await desktop.webContents.executeJavaScript("document.querySelector('#reviewApply').click()");
+  await eventually(desktop, "!document.querySelector('#passwordDeviceReview').open && !document.querySelector('#requirePasscode').disabled");
+  assert.notEqual(savedPasswordHash, previousPasswordHash);
+  assert.equal(server.devices.authenticate(offline.token), null);
+  assert.equal(server.devices.allows(server.devices.list()[0].id, 'write'), false);
+  await eventually(phone, "document.querySelector('#btn-send-clipboard').disabled");
+  server.devices.updatePermissions(server.devices.list()[0].id, { write: true });
   await desktop.webContents.executeJavaScript("document.querySelector('#requirePasscode').click()");
   await eventually(desktop, "document.querySelector('#pairingPasswordForm').hidden && !document.querySelector('#requirePasscode').disabled");
   assert.equal(policy.get().requirePasscode, false);

@@ -10,6 +10,31 @@ const { createPolicy } = require('../src/main/settings');
 const { assertSafeFile } = require('../src/main/file-safety');
 const { load, temporary, fakeElectron, pngHeader } = require('./helpers');
 
+test('password device review validates snapshots, rolls back failed saves, and applies removals and permissions', t => {
+  const root = temporary(t), store = createDeviceStore(root);
+  const first = store.pair(store.invite().token, 'Phone');
+  const second = store.pair(store.invite().token, 'Tablet');
+  const draft = () => store.list().map(device => ({ id: device.id, keep: true, originalPermissions: device.permissions, permissions: { ...device.permissions } }));
+  const review = draft(); review[0].permissions.write = false; review[1].keep = false;
+  let changes = 0; store.onChange(() => changes++); store.onRevoke(() => changes++);
+  assert.throws(() => store.applyReview(review, () => { throw new Error('Disk full'); }), /Disk full/);
+  assert.equal(store.authenticate(second.token), second.deviceId);
+  assert.equal(store.allows(first.deviceId, 'write'), true);
+  assert.equal(changes, 0);
+  assert.equal(createDeviceStore(root).list().length, 2);
+  assert.throws(() => store.applyReview([], () => assert.fail()), /changed/);
+  store.updatePermissions(first.deviceId, { view: false });
+  assert.throws(() => store.applyReview(review, () => assert.fail()), /changed/);
+  const fresh = draft(); fresh[0].permissions.write = false; fresh[1].keep = false;
+  store.applyReview(fresh, () => {});
+  assert.equal(store.authenticate(second.token), null);
+  assert.equal(store.authenticate(first.token), first.deviceId);
+  assert.equal(store.allows(first.deviceId, 'write'), false);
+  assert.equal(createDeviceStore(root).allows(first.deviceId, 'write'), false);
+  store.applyReview(draft().map(row => ({ ...row, keep: false })), () => {});
+  assert.equal(store.list().length, 0);
+});
+
 test('passcodes gate joining, bound guesses, expire and can be disabled', (t) => {
   let now = 1000;
   const devices = createDeviceStore(temporary(t), () => now);
