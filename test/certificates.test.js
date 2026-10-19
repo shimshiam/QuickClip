@@ -35,7 +35,7 @@ test('startup renews due certificates with the original CA and reuses healthy ce
   const healthy = await atTime(expires - 30 * DAY - 1).generateCertificates(root, ip);
   assert.equal(healthy.cert, initial.cert);
   assert.equal(healthy.key, initial.key);
-  for (const [label, now] of [['30-day boundary', expires - 30 * DAY], ['expired', expires + DAY], ['not yet valid', starts - DAY]]) {
+  for (const [label, now] of [['30-day boundary', expires - 30 * DAY], ['expired', expires + DAY]]) {
     await t.test(label, async () => {
       restore();
       const result = await atTime(now).generateCertificates(root, ip);
@@ -43,11 +43,14 @@ test('startup renews due certificates with the original CA and reuses healthy ce
       verify(result);
     });
   }
+  await assert.rejects(atTime(starts - DAY).generateCertificates(root, ip), /local CA is invalid/);
   for (const filename of ['server.crt', 'server.key']) {
     restore(); fs.unlinkSync(path.join(certs, filename));
     verify(await generateCertificates(root, ip));
   }
   restore(); fs.writeFileSync(path.join(certs, 'server.crt'), 'invalid certificate');
+  verify(await generateCertificates(root, ip));
+  restore(); fs.writeFileSync(path.join(certs, 'server.key'), caKey);
   verify(await generateCertificates(root, ip));
   restore(); verify(await generateCertificates(root, '192.168.1.71'), '192.168.1.71');
   restore();
@@ -56,4 +59,20 @@ test('startup renews due certificates with the original CA and reuses healthy ce
   await assert.rejects(failing.generateCertificates(root, ip), /Signing failed/);
   assert.equal(fs.readFileSync(path.join(certs, 'server.crt'), 'utf8'), initial.cert);
   assert.equal(fs.readFileSync(path.join(certs, 'ca.key'), 'utf8'), caKey);
+});
+
+test('certificate protection fails closed and incomplete CA files are preserved', async (t) => {
+  const root = temporary(t), certs = path.join(root, 'certs');
+  fs.mkdirSync(certs);
+  fs.writeFileSync(path.join(certs, 'ca.crt'), 'original CA');
+  let signed = false;
+  const generator = load('src/main/certificates.js', {
+    './certificate-permissions': { protectCertificateDirectory() { throw new Error('ACL denied'); } },
+    mkcert: { createCA() { signed = true; } },
+  });
+  await assert.rejects(generator.generateCertificates(root, '127.0.0.1'), /ACL denied/);
+  assert.equal(signed, false);
+  await assert.rejects(generateCertificates(root, '127.0.0.1'), /CA is incomplete/);
+  assert.equal(fs.readFileSync(path.join(certs, 'ca.crt'), 'utf8'), 'original CA');
+  assert.equal(fs.existsSync(path.join(certs, 'ca.key')), false);
 });

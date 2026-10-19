@@ -20,8 +20,8 @@ function protectCertificateDirectory(directory) {
       execFileSync(powershell, ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
         '-File', path.join(__dirname, 'protect-certificates.ps1'), '-CertificateDirectory', path.resolve(directory)],
       { windowsHide: true, timeout: 30000, stdio: 'pipe' });
-    } catch (_) {
-      throw new Error('Could not restrict certificate storage to your Windows account and SYSTEM. QuickClip will not start. Check ownership and NTFS permissions of the runtime/certs folder.');
+    } catch (cause) {
+      throw new Error('Could not restrict certificate storage to your Windows account and SYSTEM. QuickClip will not start. Check ownership and NTFS permissions of the runtime/certs folder.', { cause });
     }
   } else {
     fs.chmodSync(directory, 0o700);

@@ -27,8 +27,9 @@ foreach ($item in $items) {
             [System.Security.AccessControl.AccessControlType]::Allow)
         $acl.AddAccessRule($rule)
     }
-    Set-Acl -LiteralPath $item.FullName -AclObject $acl
-    $verified = Get-Acl -LiteralPath $item.FullName
+    # Persist only the modified owner and DACL, without requesting SACL privileges.
+    $item.SetAccessControl($acl)
+    $verified = $item.GetAccessControl([System.Security.AccessControl.AccessControlSections]'Access, Owner')
     $rules = @($verified.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))
     if (-not $verified.AreAccessRulesProtected -or $rules.Count -ne 2 -or
         $verified.GetOwner([System.Security.Principal.SecurityIdentifier]).Value -ne $userSid.Value) {

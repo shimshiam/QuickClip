@@ -2,23 +2,20 @@
 
 const fs = require('fs');
 const path = require('path');
-const { X509Certificate } = require('crypto');
+const { X509Certificate, createPrivateKey } = require('crypto');
 const { protectCertificateDirectory } = require('./certificate-permissions');
 const RENEW_BEFORE_MS = 30 * 24 * 60 * 60 * 1000;
 
-function needsRenewal(cert) {
+function needsRenewal(cert, key, ca, localIP) {
   try {
-    // Secure existing keys before reading them, and new files before creating them.
-    protectCertificateDirectory(certsDir);
-    if (fs.existsSync(caPath) !== fs.existsSync(caKeyPath)) {
-      throw new Error('The local CA is incomplete. Restore its matching certificate and key or follow the CA replacement instructions in README.md.');
-    }
     const parsed = new X509Certificate(cert);
     const expires = Date.parse(parsed.validTo);
     const starts = Date.parse(parsed.validFrom);
     const now = Date.now();
     return !Number.isFinite(expires) || !Number.isFinite(starts)
-      || starts > now || expires <= now + RENEW_BEFORE_MS;
+      || starts > now || expires <= now + RENEW_BEFORE_MS
+      || !parsed.checkPrivateKey(createPrivateKey(key)) || !parsed.verify(ca.publicKey)
+      || parsed.checkIP(localIP) !== localIP;
   } catch (_) {
     return true;
   }
@@ -49,6 +46,11 @@ async function generateCertificates(dataDir, localIP) {
   const ipPath   = path.join(certsDir, 'ip.txt');
 
   try {
+    // Fail closed before reading existing keys or creating any key material.
+    protectCertificateDirectory(certsDir);
+    if (fs.existsSync(caPath) !== fs.existsSync(caKeyPath)) {
+      throw new Error('The local CA is incomplete. Restore its matching certificate and key from a backup.');
+    }
     // ── First-run: no CA exists yet ───────────────────────────────────────────
     if (!fs.existsSync(caPath) || !fs.existsSync(caKeyPath)) {
       console.log('[Certs] First run – generating CA and server certificate…');
@@ -91,12 +93,17 @@ async function generateCertificates(dataDir, localIP) {
     // ── Subsequent runs ───────────────────────────────────────────────────────
     const caCert  = fs.readFileSync(caPath, 'utf-8');
     const caKey   = fs.readFileSync(caKeyPath, 'utf-8');
+    const ca = new X509Certificate(caCert);
+    if (!ca.ca || !ca.checkPrivateKey(createPrivateKey(caKey)) || !ca.verify(ca.publicKey)
+      || Date.parse(ca.validFrom) > Date.now() || Date.parse(ca.validTo) <= Date.now()) {
+      throw new Error('The local CA is invalid, expired, or does not match its key. Restore a valid matching CA or replace it and pair your devices again.');
+    }
     let   cert    = fs.existsSync(certPath) ? fs.readFileSync(certPath, 'utf-8') : '';
     let   key     = fs.existsSync(keyPath) ? fs.readFileSync(keyPath, 'utf-8') : '';
     const lastIP  = fs.existsSync(ipPath) ? fs.readFileSync(ipPath, 'utf-8').trim() : '';
 
     // Keep the trusted CA; replace only the server certificate and its key.
-    if (lastIP !== localIP || !key || needsRenewal(cert)) {
+    if (lastIP !== localIP || !key || needsRenewal(cert, key, ca, localIP)) {
       console.log(`[Certs] Renewing server certificate for ${localIP} (address changed, certificate due, or files missing/invalid)…`);
 
       const serverCert = await createCert({
