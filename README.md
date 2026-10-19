@@ -13,7 +13,7 @@
 QuickClip runs an HTTPS and WebSocket server inside an Electron app on your Windows PC. An iPhone on the same local network connects through the QuickClip web app, allowing text, images, and files to move in either direction without a cloud relay.
 
 > [!IMPORTANT]
-> Transfers stay on the local network, but every device on that network should still be treated as untrusted. Keep the pairing link and token private, and only install the QuickClip certificate you generated on your own PC.
+> Transfers stay on the local network, but every device on that network should still be treated as untrusted. Keep pairing invitations and device credentials private, and only install the QuickClip certificate you generated on your own PC.
 
 ## What it does
 
@@ -21,7 +21,7 @@ QuickClip runs an HTTPS and WebSocket server inside an Electron app on your Wind
 - Transfers photos, videos, documents, and archives up to 500 MB over local Wi-Fi.
 - Keeps a session-only clipboard history and a persistent shared-file list.
 - Encrypts traffic in transit with a locally generated CA and server certificate.
-- Authenticates the phone with a random pairing token embedded in the QR link fragment.
+- Pairs each phone using a single-use QR invitation that expires after five minutes, then issues a separate revocable device credential.
 - Runs in the Windows system tray and lets you pause text, image, or file synchronization.
 - Supports light and dark interfaces on both devices.
 
@@ -34,7 +34,7 @@ QuickClip runs an HTTPS and WebSocket server inside an Electron app on your Wind
 </p>
 <p align="center"><sub>The Windows Pair tab shows the local server address, QR code, certificate download, and the one-time iPhone trust steps.</sub></p>
 
-Scan the QR code after installing and trusting the certificate. The phone stores the PC address and pairing token locally, then removes the credentials from the visible URL.
+Scan the QR code after installing and trusting the certificate. The phone exchanges the invitation for its own credential, stores that credential locally, and removes the invitation from the visible URL.
 
 ### Clipboard in both directions
 
@@ -80,9 +80,9 @@ Files uploaded from the phone are stored under QuickClip's per-user `runtime/rec
 ### Configure synchronization
 
 <p align="center">
-  <img src="./assets/readme/windows-settings.png" alt="QuickClip desktop settings for clipboard text, images, files, history limit, and pairing token" width="620">
+  <img src="./assets/readme/windows-settings.png" alt="QuickClip desktop settings for clipboard text, images, files, history limit, and security controls (older screenshot)" width="620">
 </p>
-<p align="center"><sub>The Windows Settings tab controls which transfer types are accepted, the clipboard-history limit, and access to the pairing token.</sub></p>
+<p align="center"><sub>Settings now also includes trusted-device revocation, remote-access blocking, retention and storage controls. The screenshot above predates those controls.</sub></p>
 
 <details>
 <summary><strong>Light and dark pairing views</strong></summary>
@@ -141,8 +141,8 @@ flowchart LR
     PhoneFiles <--> PWA
 ```
 
-1. **Startup:** Electron migrates legacy data when needed, loads the pairing token and settings, chooses a local IPv4 address, creates or reuses TLS certificates, and starts Express and WebSocket on port `8443`. The service is also advertised over Bonjour/mDNS.
-2. **Pairing:** The desktop QR code contains the HTTPS address plus `ip`, `port`, and `token` values in the URL fragment. The phone saves these locally and removes the fragment from the address bar. The token is then used for authenticated API calls and the WebSocket handshake.
+1. **Startup:** Electron migrates legacy data when needed, loads trusted-device credential hashes and settings, chooses a local IPv4 address, creates or reuses TLS certificates, and starts Express and WebSocket on port `8443`. The service is also advertised over Bonjour/mDNS.
+2. **Pairing:** The desktop QR code contains the HTTPS address and a single-use invitation in the URL fragment. The phone exchanges it at `/api/pair` for a device credential, removes the fragment and uses the credential for authenticated API calls and the WebSocket handshake. Only hashes of device credentials are stored on Windows.
 3. **Windows to iPhone clipboard:** The Windows clipboard monitor polls for changes, records accepted text or images in session history, and broadcasts a WebSocket event. Disabled image sync skips image reads. Eligible images are checked using pixel fingerprints, with PNG encoding only when pixels or dimensions change; oversized dimensions are rejected first. Text travels in the event; image history sends metadata and a thumbnail, while full-resolution image data is fetched only when the phone copies it.
 4. **iPhone to Windows clipboard:** A tap on **Send Clipboard** lets the browser read text or an image. The PWA sends a transfer ID and payload over WebSocket. Windows validates the active settings and size limits, writes the system clipboard, records the item, and returns a receipt. Unconfirmed clipboard transfers can be retried for five minutes without intentionally duplicating a receipt already accepted in the current Windows session.
 5. **Files:** Phone uploads use authenticated HTTPS and stream into managed temporary storage before being moved into `runtime/received`. Files chosen on Windows are copied into that directory. Connected devices receive a WebSocket availability event; downloads use file-scoped tickets that expire after 60 seconds.
@@ -171,7 +171,7 @@ For development, use `npm run dev`. This opens Electron's developer tools with t
 
 On first launch QuickClip:
 
-1. Creates `%APPDATA%/quickclip/runtime` and a random pairing token.
+1. Creates `%APPDATA%/quickclip/runtime` and validated settings.
 2. Generates a local CA and an IP-specific server certificate under `runtime/certs`.
 3. Starts the HTTPS and WebSocket server on port `8443`.
 4. Starts clipboard monitoring and advertises the local HTTPS service with Bonjour/mDNS.
@@ -229,7 +229,8 @@ QuickClip stores runtime data in `app.getPath('userData')/runtime`, normally `%A
 
 | Path | Purpose |
 | --- | --- |
-| `runtime/config.json` | Pairing token and validated synchronization settings |
+| `runtime/config.json` | Validated synchronization and security settings; legacy tokens are ignored |
+| `runtime/devices.json` | Trusted device names, IDs and credential hashes |
 | `runtime/certs/` | Local CA, server certificate, private keys, and the last certificate IP |
 | `runtime/received/` | Files transferred in either direction |
 | `runtime/received/index.json` | Metadata and managed local paths for shared files |
@@ -240,11 +241,23 @@ When migrating from the older project-level `data/` directory, QuickClip copies 
 
 At startup, QuickClip renews the server certificate if it expires within 30 days, has already expired, or the selected IP has changed. It keeps the existing CA certificate and key, so routine renewal does not require reinstalling the iPhone profile. Renewal checks run at startup; they do not restore trust if iOS has disabled the installed profile.
 
+### Pairing, privacy and storage controls
+
+After this security update, existing phones must pair again. In Windows Settings, select **New pairing code**, then scan it within five minutes. Each code works once; generating another invalidates the previous code. Up to 20 devices can be trusted. **Revoke** removes one device. **Disconnect all** removes all trusted devices and invalidates the current invitation. These actions close connections and invalidate the affected download links and active requests.
+
+**Allow remote access** blocks all remote reads, writes and pairing when switched off, while retaining trusted devices for later use. Enable it and reload the phone page to reconnect. **Pause sync** only stops new transfers; it leaves existing shared content accessible.
+
+Clipboard history expires after **15 minutes** by default, including while sync is paused. File shares expire after **24 hours** by default; saved Windows copies and original source files remain intact. Settings allows 1–1440 minutes for clipboard history and 1–720 hours for file shares. File age is measured from when it was shared; changing the file lifetime recalculates availability for retained files. Previously downloaded or copied content cannot be recalled from another device.
+
+Shared files and partial uploads have a **2048 MB** default quota, configurable from 500 to 102400 MB. QuickClip reserves capacity for pending writes, limits uploads to two at once, and keeps at least 256 MB of disk space free. Expired shares still occupy disk space. Use **Delete saved copy** in Files to reclaim it; original source files are unaffected.
+
+Executables, scripts, shortcuts, disk images and macro-enabled Office files are blocked when shared and when opened through QuickClip, including older saved files. This extension-based safeguard is not malware scanning and does not inspect archive contents.
+
 ### Limits and delivery behavior
 
 - Text clipboard payload: up to 1 MiB of UTF-8 data.
 - Clipboard image: PNG or JPEG, up to 20 MiB compressed and after PNG conversion, and up to 40 megapixels.
-- File upload: one file at a time, up to 500 MiB.
+- File upload: one file per request, up to 500 MiB, with at most two simultaneous uploads.
 - Clipboard history: 1 to 200 items, with 50 as the default.
 - Clipboard delivery confirmation: 15-second confirmation window and a five-minute retry window.
 - Download tickets: scoped to one file or image and valid for 60 seconds.
