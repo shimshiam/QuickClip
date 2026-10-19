@@ -276,6 +276,11 @@ In the Windows Pair tab, select **Create pairing code**, or select **New pairing
 
 **Changing a password with connected devices:** selecting **Save** opens a compact device review before anything changes. The list includes connected and offline trusted devices.
 
+<p align="center">
+  <img src="./assets/readme/windows-password-device-review.png" alt="Compact Change password dialog with Keep all, Remove all, individual device choices, and Access, View, and Write icons" width="520">
+</p>
+<p align="center"><sub>Isolated test capture: keep the connected browser with Write off and remove the offline tablet. Choices take effect only after Save changes. The background QR is no longer valid.</sub></p>
+
 - Choose **Keep all** or **Remove all**, or toggle **Keep / Remove** for individual devices.
 - Adjust **Access**, **View**, and **Write** using the same icon buttons as the Devices drawer. Hover for the permission name and current state. Controls also have accessible labels; permissions are disabled for devices marked for removal, and View/Write controls are disabled when Access is off.
 - Select **Save changes** to apply the password and device choices. Removed devices must pair again; kept devices retain their credentials with the selected permissions. **Cancel** leaves everything unchanged.
