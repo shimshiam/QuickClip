@@ -101,6 +101,7 @@
     <!-- Pair Tab -->
     <section class="tab-panel active" id="panel-pair" role="tabpanel">
       <div class="pair-container">
+        <div class="pair-hero">
         <div class="qr-wrapper">
           <div class="qr-glow"></div>
           <button type="button" class="qr-frame" id="createPairingBtn" aria-label="Create pairing code">
@@ -118,7 +119,20 @@
           </button>
         </div>
 
-        <p class="pair-description">Each code pairs one device and expires after five minutes.<span>Click the QR code or go to Settings to create a new one.</span></p>
+        <div class="pair-intro"><h1>Connect your phone</h1><p>Create a code, then scan it with your phone’s camera.</p><span class="pair-expiry">One device · Expires in 5 minutes</span></div>
+        </div>
+        <div class="pair-security">
+        <div class="settings-row">
+          <label class="settings-label" for="requirePasscode"><span class="settings-title">Require password</span><span class="settings-desc">Ask for a password after scanning.</span></label>
+          <label class="apple-switch"><input type="checkbox" id="requirePasscode"><span class="switch-slider"></span></label>
+        </div>
+        <form id="pairingPasswordForm" hidden>
+          <label for="pairingPassword">Joining password</label>
+          <div class="pair-password-entry"><input id="pairingPassword" type="password" maxlength="128" autocomplete="new-password" placeholder="Enter a password" class="settings-input" />
+          <button type="submit" id="savePairingPassword" class="btn btn-ghost btn-sm">Save</button></div>
+          <p id="pairingPasswordStatus" class="pair-description" aria-live="polite"></p>
+        </form>
+        </div>
       <div class="server-url-wrap" id="serverUrlWrap" title="Click to copy server URL">
           <span class="server-url" id="serverUrl">https://192.168.1.100:8443</span>
           <svg class="copy-url-icon" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -126,9 +140,9 @@
             <path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1" />
           </svg>
         </div>
-        <p class="pair-instruction">Scan this QR code with your iPhone camera</p>
 
-        <button class="btn btn-accent" id="downloadCaBtn">
+
+        <button class="btn btn-ghost btn-sm" id="downloadCaBtn">
           <svg class="btn-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" />
             <polyline points="7 10 12 15 17 10" />

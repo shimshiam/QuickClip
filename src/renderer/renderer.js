@@ -132,14 +132,14 @@
     if (pairingBusy) return;
     pairingBusy = true;
     clearPairingCode();
-    const buttons = [$('#createPairingBtn'), $('#newPairingBtn')];
+    const buttons = [$('#createPairingBtn'), $('#newPairingBtn'), $('#requirePasscode')];
     buttons.forEach(button => { button.disabled = true; button.setAttribute('aria-busy', 'true'); });
     $('#qrPlaceholderText').textContent = 'Creating pairing code…';
     $('#newPairingBtn').textContent = 'Creating pairing code…';
     try {
       const qrDataUrl = await window.quickclip.getQRCode();
       if (!qrDataUrl) throw new Error('Could not create a code. Check remote access in Settings and try again.');
-      dom.qrImage.src = qrDataUrl;
+      dom.qrImage.src = qrDataUrl.qr || qrDataUrl;
       dom.qrImage.classList.add('loaded');
       $('#createPairingBtn').setAttribute('aria-label', 'Create a new pairing code');
       pairingExpiry = setTimeout(clearPairingCode, 5 * 60 * 1000);
@@ -202,6 +202,9 @@
       if (settings && dom.settingMaxHistory) dom.settingMaxHistory.value = settings.maxHistory || 50;
 
       $('#settingRemoteAccess').checked = settings.remoteAccess !== false;
+      $('#requirePasscode').checked = settings.requirePasscode === true;
+      $('#pairingPasswordForm').hidden = !settings.requirePasscode;
+      $('#pairingPasswordStatus').textContent = settings.hasPairingPassword ? 'Password saved. Leave blank to keep it.' : 'Set a password to enable protected joining.';
       $('#settingClipboardTtl').value = settings.clipboardTtlMinutes || 15;
       $('#settingFileTtl').value = settings.fileTtlHours || 24;
       $('#settingStorageQuota').value = settings.storageQuotaMB || 2048;
@@ -232,6 +235,32 @@
       await refreshSettings();
     }
   }
+
+  async function savePairingPassword(event) {
+    event?.preventDefault();
+    const toggle = $('#requirePasscode');
+    const input = $('#pairingPassword');
+    $('#pairingPasswordForm').hidden = !toggle.checked;
+    const settings = await window.quickclip.getSettings();
+    if (toggle.checked && !input.value && !settings.hasPairingPassword) {
+      input.focus();
+      return;
+    }
+    toggle.disabled = true;
+    $('#savePairingPassword').disabled = true;
+    try {
+      const update = { requirePasscode: toggle.checked };
+      if (toggle.checked && input.value) update.pairingPassword = input.value;
+      if (!await window.quickclip.updateSettings(update)) throw new Error('Could not save joining password');
+      input.value = '';
+      await refreshSettings();
+      clearPairingCode();
+      await loadQRCode();
+    } catch (err) { showToast(err.message, 'error'); await refreshSettings(); }
+    finally { toggle.disabled = false; $('#savePairingPassword').disabled = false; }
+  }
+  $('#requirePasscode').addEventListener('change', savePairingPassword);
+  $('#pairingPasswordForm').addEventListener('submit', savePairingPassword);
 
   if (dom.settingSyncText) dom.settingSyncText.addEventListener('change', saveSettings);
   if (dom.settingSyncImages) dom.settingSyncImages.addEventListener('change', saveSettings);
