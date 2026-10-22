@@ -173,7 +173,7 @@ app.whenReady().then(async () => {
   await desktop.webContents.executeJavaScript("document.querySelector('#requirePasscode').click()");
   await eventually(desktop, "!document.querySelector('#pairingPasswordForm').hidden");
   await desktop.webContents.executeJavaScript("document.querySelector('#pairingPassword').value = 'My joining password! 42'; document.querySelector('#pairingPasswordForm').requestSubmit()");
-  await eventually(desktop, "document.querySelector('#pairingPasswordStatus').textContent.includes('Password saved') && !document.querySelector('#requirePasscode').disabled");
+  await eventually(desktop, "document.querySelector('#toastContainer').textContent.includes('Password saved') && !document.querySelector('#requirePasscode').disabled");
   assert.equal(policy.get().requirePasscode, true);
   fs.mkdirSync(path.resolve(__dirname, '../.test-output'), { recursive: true });
   await new Promise(resolve => setTimeout(resolve, 4000));

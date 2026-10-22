@@ -7,6 +7,12 @@ let tray = null;
 let isPaused = false;
 let pauseToggleCallbacks = [];
 let networkControls = null;
+const TRAY_GUID = '11cf9987-ea71-45c1-b4a8-9d209fe2abe9';
+
+function destroyTray() {
+  if (tray && !tray.isDestroyed()) tray.destroy();
+  tray = null;
+}
 
 // ── createTray ──────────────────────────────────────────────────────────────────
 /**
@@ -17,6 +23,10 @@ let networkControls = null;
  * @returns {Electron.Tray}
  */
 function createTray(mainWindow, iconPath, network = null) {
+  // Recreating the tray must not abandon an existing native icon.
+  destroyTray();
+  app.removeListener('before-quit', destroyTray);
+  app.once('before-quit', destroyTray);
   networkControls = network;
   try {
     let icon;
@@ -40,7 +50,7 @@ function createTray(mainWindow, iconPath, network = null) {
       icon = nativeImage.createFromBuffer(buf, { width: size, height: size });
     }
 
-    tray = new Tray(icon);
+    tray = new Tray(icon, TRAY_GUID);
     tray.setToolTip('QuickClip - No devices');
 
     // Build context menu
@@ -62,6 +72,7 @@ function createTray(mainWindow, iconPath, network = null) {
     console.log('[Tray] System tray created');
     return tray;
   } catch (err) {
+    destroyTray();
     console.error('[Tray] Failed to create tray:', err.message);
     return null;
   }

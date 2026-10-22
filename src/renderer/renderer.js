@@ -204,7 +204,7 @@
       $('#settingRemoteAccess').checked = settings.remoteAccess !== false;
       $('#requirePasscode').checked = settings.requirePasscode === true;
       $('#pairingPasswordForm').hidden = !settings.requirePasscode;
-      $('#pairingPasswordStatus').textContent = settings.hasPairingPassword ? 'Password saved. Leave blank to keep it.' : 'Set a password to enable protected joining.';
+      $('#pairingPasswordStatus').textContent = settings.hasPairingPassword ? 'Leave blank to keep your current password.' : 'Set a password to enable protected joining.';
       $('#settingClipboardTtl').value = settings.clipboardTtlMinutes || 15;
       $('#settingFileTtl').value = settings.fileTtlHours || 24;
       $('#settingStorageQuota').value = settings.storageQuotaMB || 2048;
@@ -326,6 +326,7 @@
       await refreshSettings();
       clearPairingCode();
       await loadQRCode();
+      if (update.pairingPassword && event?.type === 'submit') showToast('Password saved');
     } catch (err) { showToast(err.message, 'error'); await refreshSettings(); }
     finally { toggle.disabled = false; $('#savePairingPassword').disabled = false; }
   }
