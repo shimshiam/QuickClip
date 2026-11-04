@@ -1,0 +1,20 @@
+
+.file-preview-button { padding: 0; cursor: pointer; overflow: hidden; border: 1px solid currentColor; font: inherit; font-size: 11px; color: inherit; background: transparent; flex-shrink: 0; }
+.file-preview-button img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.file-preview-button:focus-visible { outline: 2px solid #6b9fff; outline-offset: 3px; }
+.file-preview-dialog { box-sizing: border-box; width: min(900px, 92vw); max-height: 90dvh; padding: 20px; border: 1px solid #555; border-radius: 16px; background: #181a20; color: #f5f5f7; }
+.file-preview-dialog::backdrop { background: #000b; }
+.file-preview-dialog header { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+.file-preview-dialog h2 { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 16px; margin: 0; }
+.file-preview-dialog button { cursor: pointer; padding: 8px 12px; border-radius: 8px; }
+.file-preview-content { min-height: 100px; overflow: auto; max-height: 72dvh; }
+.file-preview-content img, .file-preview-content video { display: block; max-width: 100%; max-height: 70dvh; margin: auto; object-fit: contain; }
+.file-preview-content audio { width: 100%; }
+.file-preview-content iframe { width: 100%; height: 68dvh; border: 0; background: white; }
+.file-preview-content pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.5; }
+
+.file-preview-row { display: flex; align-items: center; gap: 12px; }
+.file-preview-row .item-icon { width: 44px; height: 44px; border-radius: 8px; display: grid; place-items: center; flex-shrink: 0; }
+.file-preview-row .item-body { flex: 1; min-width: 0; }
+.file-preview-row .item-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.file-preview-row .item-action-btn { flex-shrink: 0; }

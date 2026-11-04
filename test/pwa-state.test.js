@@ -15,6 +15,7 @@ function phone(fetch) {
     historyRequest: 0, historyRevision: 0, serverIp: '127.0.0.1', serverPort: '8443', authToken: 'test',
     clipboardItems: [{ content: 'old secret' }], fileItems: [{ name: 'old.txt' }],
     releaseItem() {}, renderClipboardList() {}, renderFilesList() {},
+    FilePreview: { closeAll() { state.previewsClosed = true; } },
   };
   state.addClipboardItem = item => state.clipboardItems.push(item);
   state.addFileItem = item => state.fileItems.push(item);
@@ -31,6 +32,7 @@ test('denied history and file responses clear previously visible content', async
       await state.fetchInitialState();
       assert.equal(state.clipboardItems.length, 0);
       assert.equal(state.fileItems.length, 0);
+      assert.equal(state.previewsClosed, true);
     }
   }
 });

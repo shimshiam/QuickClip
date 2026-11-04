@@ -133,6 +133,7 @@
   }
 
   function clearRemoteItems() {
+    FilePreview.closeAll();
     historyRequest++;
     clipboardItems.forEach(releaseItem);
     clipboardItems.length = 0;
@@ -685,7 +686,7 @@
 
     fileItems.forEach((item, index) => {
       const el = document.createElement('div');
-      el.className = 'item-card';
+      el.className = 'item-card file-preview-row';
       el.style.animationDelay = `${index * 0.04}s`;
 
       const ext = getFileExtension(item.name);
@@ -703,6 +704,15 @@
         <button class="item-action-btn" aria-label="Download" ${item.available === false ? 'disabled' : ''}>${item.available === false ? 'Unavailable' : 'Save'}</button>
       `;
 
+      FilePreview.attach(el.querySelector('.item-icon'), item, async signal => {
+        const response = await fetch(`/api/files/${encodeURIComponent(item.id)}`, {
+          headers: { Authorization: `Bearer ${authToken}` }, signal
+        });
+        if (!response.ok) throw new Error('Preview unavailable');
+        const info = FilePreview.profile(item);
+        if (!info || Number(response.headers.get('Content-Length')) > info.limit) throw new Error('File too large');
+        return response.blob();
+      });
       el.addEventListener('click', () => downloadFile(item));
       filesList.insertBefore(el, filesEmpty);
     });

@@ -40,6 +40,7 @@ contextBridge.exposeInMainWorld('quickclip', {
   showInExplorer: (filePath) => ipcRenderer.invoke('show-in-explorer', filePath),
 
   /** Fetch received files array. */
+  previewFile: (id) => ipcRenderer.invoke('preview-file', id),
   getFiles: () => ipcRenderer.invoke('get-files'),
 
   /** Open a file by ID or path. */

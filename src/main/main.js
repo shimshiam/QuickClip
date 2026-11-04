@@ -287,6 +287,20 @@ function registerIPCHandlers() {
     }
   });
 
+  ipcMain.handle('preview-file', async (_event, id) => {
+    const file = typeof id === 'string' && fileManager?.getFile(id);
+    const info = file && require('../pwa/file-preview').profile(file);
+    if (!info) throw new Error('Preview unavailable');
+    const handle = await fs.promises.open(file.path, 'r');
+    try {
+      if ((await handle.stat()).size > info.limit) throw new Error('File too large to preview');
+      const bytes = Buffer.alloc(info.limit + 1);
+      const { bytesRead } = await handle.read(bytes, 0, bytes.length, 0);
+      if (bytesRead > info.limit) throw new Error('File too large to preview');
+      return { bytes: bytes.subarray(0, bytesRead), type: info.type };
+    } finally { await handle.close(); }
+  });
+
   ipcMain.handle('get-files', () => {
     try {
       return fileManager ? fileManager.listFiles() : [];

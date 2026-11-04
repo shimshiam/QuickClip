@@ -734,6 +734,10 @@
       </div>
     `;
 
+    FilePreview.attach(el.querySelector('.file-icon'), file, async () => {
+      const result = await window.quickclip.previewFile(file.id);
+      return new Blob([result.bytes], { type: result.type });
+    });
     el.querySelector('.file-open-btn').addEventListener('click', () => {
       window.quickclip.openFile(file.path || file.id).then((ok) => { if (!ok) showToast('File could not be opened or is blocked for safety', 'error'); });
     });

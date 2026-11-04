@@ -4,10 +4,11 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; font-src 'self';" />
+        content="default-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; frame-src blob:; style-src 'self' 'unsafe-inline'; font-src 'self';" />
   <title>QuickClip</title>
 
   <link rel="stylesheet" href="renderer.css" />
+<link rel="stylesheet" href="../pwa/file-preview.css" />
 </head>
 <body>
 
@@ -343,6 +344,7 @@
     <div class="review-actions review-footer"><button type="button" class="btn btn-ghost" id="reviewCancel">Cancel</button><button type="button" class="btn btn-accent" id="reviewApply">Save changes</button></div>
   </dialog>
 
+  <script src="../pwa/file-preview.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

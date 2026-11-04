@@ -51,7 +51,7 @@ function createServer(certData, options) {
     res.setHeader('Content-Security-Policy', [
       "default-src 'none'", "script-src 'self'", "script-src-attr 'none'", "style-src 'self'",
       "img-src 'self' data: blob:", "font-src 'self'", `connect-src 'self' ${websocketOrigin}`,
-      "worker-src 'self'", "manifest-src 'self'", "object-src 'none'", "base-uri 'none'",
+      "media-src 'self' blob:", "frame-src blob:", "worker-src 'self'", "manifest-src 'self'", "object-src 'none'", "base-uri 'none'",
       "form-action 'none'", "frame-ancestors 'none'",
     ].join('; '));
     res.setHeader('X-Frame-Options', 'DENY');
