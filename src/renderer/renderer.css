@@ -5,6 +5,26 @@
    ============================================================ */
 
 /* ---------- Design Tokens ---------- */
+@font-face {
+  font-family: 'JUST Sans';
+  src: url('../pwa/fonts/just-sans-regular.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'JUST Sans';
+  src: url('../pwa/fonts/just-sans-extrabold.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+}
+
+.app-title, .pair-intro h1, .section-title, .drawer-header h2, .password-review h2, .empty-title {
+  font-family: 'JUST Sans', var(--font);
+}
+
 :root {
   /* Light mode — Windows XP Silver / macOS Aqua Light */
   --bg-app:            #d8dce6;
@@ -242,11 +262,13 @@ body::after {
 }
 
 .logo-icon {
-  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+  flex: 0 0 26px;
+  color: #293448;
+  filter: drop-shadow(0 1px 0 rgba(255, 255, 255, 0.55));
 }
 
 :root.dark-mode .logo-icon {
-  stroke: #eef2fa;
+  color: #e5ecf8;
   filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.75));
 }
 

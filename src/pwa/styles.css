@@ -1,4 +1,24 @@
 /* ─── Design Tokens ─── */
+@font-face {
+  font-family: 'JUST Sans';
+  src: url('/fonts/just-sans-regular.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'JUST Sans';
+  src: url('/fonts/just-sans-extrabold.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+}
+
+.header-title, .section-title, .overlay-title, .empty-title {
+  font-family: 'JUST Sans', var(--font);
+}
+
 :root {
   /* Light mode — Windows XP Silver / macOS Aqua Light */
   --bg-primary:          #d8dce6;
