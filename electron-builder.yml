@@ -1,0 +1,27 @@
+appId: com.quickclip.app
+productName: QuickClip
+directories:
+  output: dist
+# PowerShell must read the certificate-permissions script from a real file.
+asar: false
+files:
+  - src/**/*
+  - assets/appIcon.png
+  - assets/tray-icon.png
+  - package.json
+win:
+  icon: assets/appIcon.png
+  target:
+    - target: nsis
+      arch:
+        - x64
+portable:
+  artifactName: QuickClip.exe
+nsis:
+  artifactName: QuickClip-Setup.exe
+  oneClick: true
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  runAfterFinish: false
+  deleteAppDataOnUninstall: false

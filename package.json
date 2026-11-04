@@ -6,6 +6,9 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
+    "pack:win": "electron-builder --win --x64 --dir",
+    "dist:win": "electron-builder --win --x64 --publish never",
+    "dist:portable": "electron-builder --win portable --x64 --publish never",
     "test": "node --test test/*.test.js",
     "test:electron": "electron test/electron-smoke.cjs"
   },
@@ -27,6 +30,7 @@
     "bufferutil": "^4.0.8"
   },
   "devDependencies": {
-    "electron": "^43.8.0"
+    "electron": "^43.8.0",
+    "electron-builder": "^26.18.0"
   }
 }

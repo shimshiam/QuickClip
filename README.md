@@ -15,6 +15,23 @@ QuickClip runs an HTTPS and WebSocket server inside an Electron app on your Wind
 > [!IMPORTANT]
 > Transfers stay on the local network, but every device on that network should still be treated as untrusted. Keep pairing invitations and device credentials private, and only install the QuickClip certificate you generated on your own PC.
 
+## Windows executable
+
+Build the standalone Windows app with `npm ci` followed by `npm run dist:win`.
+The result is `dist/QuickClip-Setup.exe`. Run it once to install QuickClip for your
+Windows account, then open QuickClip from the desktop or Start menu shortcut.
+Electron is bundled, so Node.js is not required on that PC. Installation extracts
+the runtime once; normal launches run the installed executable directly.
+Settings, paired devices, certificates, and shared files remain in the Windows
+user profile, outside the executable. This local build is unsigned.
+
+For a folder build, use `npm run pack:win` and launch
+`dist/win-unpacked/QuickClip.exe`. Keep the entire `win-unpacked` folder together.
+
+`npm run dist:portable` optionally builds the single-file `dist/QuickClip.exe`.
+That launcher extracts the runtime on every launch and starts more slowly than
+the installed or folder version. Prefer the installer for everyday use.
+
 ## What it does
 
 - Synchronizes copied text and clipboard images between Windows and iPhone.
