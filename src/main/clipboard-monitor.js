@@ -19,8 +19,8 @@ const MAX_IMAGE_PIXELS = 40000000;
 
 function imageFingerprint(img) {
   const { width, height } = img.getSize();
-  // getBitmap borrows native memory. Hash it synchronously and never retain the buffer.
-  return `${width}x${height}:${hash(img.getBitmap())}`;
+  // Hash raw pixels without encoding PNG; do not retain the bitmap copy.
+  return `${width}x${height}:${hash(img.toBitmap())}`;
 }
 
 function readImageState() {

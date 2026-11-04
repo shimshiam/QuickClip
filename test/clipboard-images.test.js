@@ -11,7 +11,7 @@ function setup(t, settings = {}) {
   electron.clipboard.readImage = () => { counts.reads++; return current; };
   function image(pixels, width = 400, height = 300, bytes = 100) {
     return { isEmpty: () => false, getSize: () => ({ width, height }),
-      getBitmap: () => { counts.bitmaps++; return Buffer.from(pixels); },
+      toBitmap: () => { counts.bitmaps++; return Buffer.from(pixels); },
       toPNG: () => { counts.encodes++; return Buffer.alloc(bytes); },
       resize: () => ({ toDataURL: () => 'data:image/png;base64,dGh1bWI=' }) };
   }

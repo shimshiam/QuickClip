@@ -27,7 +27,6 @@ function fakeElectron() {
     isEmpty: () => !buffer.length,
     toPNG: () => Buffer.from(buffer),
     toBitmap: () => Buffer.from(buffer),
-    getBitmap: () => buffer,
     toDataURL: () => 'data:image/png;base64,dGh1bWI=',
     getSize: () => ({ width: 400, height: 300 }),
     resize: () => image(Buffer.from('thumb')),
