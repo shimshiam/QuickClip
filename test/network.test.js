@@ -50,7 +50,7 @@ test('tray exposes automatic and manual choices and refreshes unavailable adapte
     constructor() { super(); tray = this; }
     setToolTip() {} setContextMenu(menu) { template = menu; }
   }
-  const api = load('src/main/tray.js', { electron: { Tray, Menu: { buildFromTemplate: (menu) => menu },
+  const api = load('src/main/tray.js', { electron: { app: new EventEmitter(), Tray, Menu: { buildFromTemplate: (menu) => menu },
     nativeImage: { createFromPath: () => ({ isEmpty: () => false }) } } });
   api.createTray(null, '', { getState: () => state, select: (value) => { selection = value; } });
   const choices = () => template.find((item) => item.label === 'Network Interface').submenu;
