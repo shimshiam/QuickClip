@@ -508,6 +508,8 @@ app.on('ready', async () => {
       getImagePathFn: getImagePath,
       policy: syncPolicy,
       hostnames: [localIP, '127.0.0.1', 'localhost'],
+      // Listen only on the selected adapter, not on every network the PC is on.
+      host: localIP,
     });
     await new Promise((resolve, reject) => {
       runningServer.httpsServer.once('listening', resolve);
@@ -555,7 +557,7 @@ app.on('ready', async () => {
     });
 
     // 10. Advertise via mDNS
-    startMDNS(port);
+    startMDNS(port, localIP);
 
     console.log(`[Main] QuickClip running at https://${localIP}:${port}`);
   } catch (err) {

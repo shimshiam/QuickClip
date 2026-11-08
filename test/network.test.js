@@ -63,3 +63,27 @@ test('tray exposes automatic and manual choices and refreshes unavailable adapte
   choices().find((item) => item.label === 'Automatic').click();
   assert.equal(selection, null);
 });
+
+test('mDNS advertises only on the selected adapter and never on loopback', () => {
+  const created = [];
+  class Bonjour { constructor(options) { created.push(options); } publish() { return { stop() {} }; } destroy() {} }
+  const network = load('src/main/network.js', { 'bonjour-service': { Bonjour } });
+  network.startMDNS(8443, '127.0.0.1');
+  network.startMDNS(8443, undefined);
+  assert.equal(created.length, 0);
+  network.startMDNS(8443, '192.168.1.10');
+  assert.deepEqual(created.map((options) => options.interface), ['192.168.1.10']);
+  network.stopMDNS();
+});
+
+test('the mDNS announcement contains only the selected address', () => {
+  const { Service } = require('bonjour-service');
+  let service;
+  class Bonjour { publish(config) { service = new Service(config); return service; } destroy() {} }
+  const network = load('src/main/network.js', { 'bonjour-service': { Bonjour } });
+  network.startMDNS(8443, '192.168.1.10');
+  const addresses = service.records().filter((record) => ['A', 'AAAA'].includes(record.type));
+  assert.deepEqual(addresses.map((record) => `${record.type} ${record.data}`), ['A 192.168.1.10']);
+  assert.ok(service.records().some((record) => record.type === 'SRV'), 'service records remain');
+  network.stopMDNS();
+});

@@ -36,7 +36,7 @@ function notify(callbacks, value) { for (const cb of callbacks) { try { cb(value
 function createServer(certData, options) {
   const { port = 8443, dataDir, fileManager, getHistoryFn = () => [],
     writeToClipboardFn, getImagePathFn = () => null, policy = createPolicy(),
-    hostnames = ['localhost', '127.0.0.1'] } = options;
+    hostnames = ['localhost', '127.0.0.1'], host = '0.0.0.0' } = options;
   activePolicy = policy;
   const app = express();
   const receipts = createReceiptCache();
@@ -262,7 +262,7 @@ function createServer(certData, options) {
     }
   }, 30000);
   wss.on('close', () => clearInterval(keepalive));
-  httpsServer.listen(port, '0.0.0.0', () => console.log(`[Server] Listening on port ${httpsServer.address().port}`));
+  httpsServer.listen(port, host, () => console.log(`[Server] Listening on port ${httpsServer.address().port}`));
   httpsServer.on('error', (err) => console.error('[Server]', err.message));
   return { httpsServer, wss, app, devices, enforceAccess };
 }

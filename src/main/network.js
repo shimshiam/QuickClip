@@ -92,18 +92,32 @@ function generatePairingToken() {
 
 // ── mDNS (Bonjour) ─────────────────────────────────────────────────────────────
 /**
- * Advertises QuickClip on the local network via mDNS / Bonjour.
+ * Advertises QuickClip via mDNS / Bonjour on the selected adapter only, so it is
+ * not announced on VPNs, virtual adapters, or other networks the PC is on.
  * @param {number} port
+ * @param {string} address – IPv4 address of the selected adapter
  */
-function startMDNS(port) {
+function startMDNS(port, address) {
+  if (!isIPv4(address || '') || address.startsWith('127.')) {
+    console.log('[Network] mDNS skipped: no LAN adapter selected');
+    return;
+  }
   try {
     const { Bonjour } = require('bonjour-service');
-    bonjourInstance = new Bonjour();
+    bonjourInstance = new Bonjour({ interface: address });
     publishedService = bonjourInstance.publish({
       name: 'QuickClip',
       type: 'https',
       port,
+      disableIPv6: true,
     });
+    // bonjour-service adds an address record for every adapter (VPNs, Hyper-V,
+    // WSL...). Announce only the address the server actually listens on.
+    const service = publishedService;
+    const allRecords = service.records.bind(service);
+    service.records = () => allRecords()
+      .filter((record) => record.type !== 'A' && record.type !== 'AAAA')
+      .concat(service.RecordA(service, address));
     console.log(`[Network] mDNS service published on port ${port}`);
   } catch (err) {
     console.error('[Network] Failed to start mDNS:', err.message);
