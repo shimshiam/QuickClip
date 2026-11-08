@@ -169,3 +169,18 @@ test('the CA replacement notice survives a failed start until acknowledged', asy
   acknowledgeRotation(root);
   assert.equal((await generateCertificates(root, '192.168.1.70')).rotated, false);
 });
+
+test('a CA whose restrictions cannot be confirmed (EC key) is replaced, not trusted', async (t) => {
+  try { execFileSync('openssl', ['version'], { stdio: 'ignore' }); } catch (_) { t.skip('openssl is not installed'); return; }
+  const root = temporary(t), certs = path.join(root, 'certs');
+  fs.mkdirSync(certs);
+  execFileSync('openssl', ['req', '-x509', '-newkey', 'ec', '-pkeyopt', 'ec_paramgen_curve:P-256', '-nodes', '-days', '30',
+    '-subj', '/CN=Restored EC CA', '-addext', 'basicConstraints=critical,CA:TRUE',
+    '-keyout', path.join(certs, 'ca.key'), '-out', path.join(certs, 'ca.crt')], { stdio: 'ignore' });
+  const ecCA = fs.readFileSync(path.join(certs, 'ca.crt'), 'utf8');
+  assert.throws(() => hasNameConstraints(ecCA));
+  const result = await generateCertificates(root, '192.168.1.70');
+  assert.equal(result.rotated, true);
+  assert.notEqual(result.ca, ecCA);
+  assert.equal(hasNameConstraints(result.ca), true);
+});

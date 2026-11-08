@@ -58,7 +58,13 @@ async function generateCertificates(dataDir, localIP) {
     }
     // An unconstrained root trusted on a phone can vouch for any website, so a
     // CA created before name constraints existed is replaced (once) by a new one.
-    const unrestricted = (pem) => { try { return !hasNameConstraints(pem); } catch (_) { return false; } }; // unreadable CAs fail below
+    const unrestricted = (pem) => {
+      try { return !hasNameConstraints(pem); } catch (_) {
+        // A certificate Node can read but whose name constraints cannot be confirmed
+        // (e.g. a non-RSA key) is replaced, not trusted. Unreadable files fail below.
+        try { new X509Certificate(pem); return true; } catch (__) { return false; }
+      }
+    };
     if (fs.existsSync(caPath) && fs.existsSync(caKeyPath) && unrestricted(fs.readFileSync(caPath, 'utf-8'))) {
       console.log('[Certs] Replacing unrestricted CA with a name-constrained CA…');
       fs.writeFileSync(rotationPath, new Date().toISOString(), 'utf-8');
