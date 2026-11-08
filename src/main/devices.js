@@ -5,13 +5,18 @@ const path = require('path');
 const { atomicJSON } = require('./storage');
 const { verifyPassword } = require('./pairing-password');
 const digest = (token) => crypto.createHash('sha256').update(token).digest('hex');
+// A credential unused for this long stops working, so a lost or forgotten phone
+// cannot reconnect months later. Activity is persisted at most every 6 hours.
+const INACTIVE_EXPIRY_MS = 90 * 24 * 60 * 60 * 1000;
+const ACTIVITY_WRITE_MS = 6 * 60 * 60 * 1000;
 
 function createDeviceStore(dataDir, now = Date.now) {
   const file = path.join(dataDir, 'devices.json');
   let devices = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : [];
   if (!Array.isArray(devices) || devices.length > 20 || devices.some((device) => !device
     || typeof device.id !== 'string' || typeof device.name !== 'string'
-    || !/^[a-f0-9]{64}$/.test(device.tokenHash) || !Number.isFinite(device.pairedAt))) {
+    || !/^[a-f0-9]{64}$/.test(device.tokenHash) || !Number.isFinite(device.pairedAt)
+    || (device.lastSeenAt !== undefined && !Number.isFinite(device.lastSeenAt)))) {
     throw new Error('Invalid trusted-device store');
   }
   let invitation = null;
@@ -19,6 +24,26 @@ function createDeviceStore(dataDir, now = Date.now) {
   const changeListeners = [];
   const permissions = (device) => ({ view: true, write: true, access: true, ...device.permissions });
   function commit(next) { atomicJSON(file, next); devices = next; }
+  // A clock moved backwards must not extend a credential's life.
+  const idleFor = (device) => now() - Math.min(device.lastSeenAt, now());
+  const expired = (device) => idleFor(device) > INACTIVE_EXPIRY_MS;
+  // Devices paired before expiry existed start their 90 days now instead of
+  // being cut off for an old pairing date.
+  if (devices.some((device) => device.lastSeenAt === undefined)) {
+    const next = devices.map((device) => (device.lastSeenAt === undefined ? { ...device, lastSeenAt: now() } : device));
+    try { commit(next); } catch (err) {
+      devices = next; // keep them working; the timestamp is saved on a later write
+      console.error('[Devices] Could not record device activity:', err.message);
+    }
+  }
+  // Expired devices free their slot and disappear from the list at startup.
+  function pruneExpired() {
+    const gone = devices.filter(expired);
+    if (!gone.length) return;
+    commit(devices.filter((device) => !expired(device)));
+    gone.forEach((device) => listeners.forEach((listener) => listener(device.id)));
+  }
+  try { pruneExpired(); } catch (err) { console.error('[Devices] Could not remove expired devices:', err.message); }
   return {
     invalidateInvitation() { invitation = null; },
     invite(passwordHash = '') {
@@ -38,10 +63,11 @@ function createDeviceStore(dataDir, now = Date.now) {
           return { passcodeRequired: true, error: 'Incorrect password. Try again.' };
         }
       }
+      pruneExpired();
       if (devices.length >= 20) throw new Error('Remove a trusted device before pairing another');
       const credential = crypto.randomBytes(32).toString('hex');
       const device = { id: crypto.randomUUID(), name: typeof name === 'string' ? name.trim().slice(0, 80) || 'Phone' : 'Phone',
-        tokenHash: digest(credential), pairedAt: now() };
+        tokenHash: digest(credential), pairedAt: now(), lastSeenAt: now() };
       commit([...devices, device]);
       invitation = null;
       return { token: credential, deviceId: device.id };
@@ -49,7 +75,20 @@ function createDeviceStore(dataDir, now = Date.now) {
     authenticate(token) {
       if (typeof token !== 'string' || !token || token.length > 256) return null;
       const hash = digest(token);
-      return devices.find((device) => device.tokenHash === hash)?.id || null;
+      const device = devices.find((entry) => entry.tokenHash === hash);
+      if (!device) return null;
+      const idle = idleFor(device);
+      if (idle > INACTIVE_EXPIRY_MS) {
+        try { commit(devices.filter((entry) => entry.id !== device.id)); }
+        catch (err) { console.error('[Devices] Could not remove expired device:', err.message); }
+        listeners.forEach((listener) => listener(device.id));
+        return null;
+      }
+      if (idle > ACTIVITY_WRITE_MS) {
+        try { commit(devices.map((entry) => (entry.id === device.id ? { ...entry, lastSeenAt: now() } : entry))); }
+        catch (err) { console.error('[Devices] Could not record device activity:', err.message); }
+      }
+      return device.id;
     },
     allows(id, capability = 'access') {
       const device = devices.find(device => device.id === id);

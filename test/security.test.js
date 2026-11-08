@@ -70,7 +70,7 @@ test('pairing invitations expire, work once, persist only credential hashes and 
   assert.equal(devices.pair(fresh.token, 'Replay'), null);
   assert.equal(devices.authenticate(first.token), first.deviceId);
   assert.equal(fs.readFileSync(path.join(root, 'devices.json'), 'utf8').includes(first.token), false);
-  assert.equal(createDeviceStore(root).authenticate(first.token), first.deviceId);
+  assert.equal(createDeviceStore(root, () => now).authenticate(first.token), first.deviceId);
   const second = devices.pair(devices.invite().token, 'Tablet');
   devices.revoke(first.deviceId);
   assert.equal(devices.authenticate(first.token), null);
@@ -252,4 +252,44 @@ test('opening a file deleted outside QuickClip fails without recreating it', asy
   await assert.rejects(manager.openFile(saved.id), /no longer available/);
   assert.equal(fs.existsSync(saved.path), false);
   assert.equal(launched, false);
+});
+
+test('device credentials expire after 90 days without use; activity keeps them alive', (t) => {
+  const root = temporary(t); let now = 1000;
+  const DAY = 24 * 60 * 60 * 1000;
+  const devices = createDeviceStore(root, () => now);
+  const revoked = []; devices.onRevoke((id) => revoked.push(id));
+  const active = devices.pair(devices.invite().token, 'Active');
+  const idle = devices.pair(devices.invite().token, 'Idle');
+  for (let day = 0; day < 120; day += 30) { now += 30 * DAY; assert.equal(devices.authenticate(active.token), active.deviceId); }
+  assert.equal(devices.authenticate(idle.token), null, 'unused for 120 days');
+  assert.deepEqual(revoked, [idle.deviceId]);
+  assert.equal(devices.has(idle.deviceId), false);
+  assert.equal(createDeviceStore(root, () => now).authenticate(active.token), active.deviceId, 'activity was persisted');
+});
+
+test('devices paired before expiry existed get a fresh 90 days instead of being cut off', (t) => {
+  const root = temporary(t);
+  const crypto = require('node:crypto');
+  const token = 'a'.repeat(64);
+  fs.writeFileSync(path.join(root, 'devices.json'), JSON.stringify([{ id: 'old-phone', name: 'Phone',
+    tokenHash: crypto.createHash('sha256').update(token).digest('hex'), pairedAt: 1 }]));
+  const now = 400 * 24 * 60 * 60 * 1000;
+  assert.equal(createDeviceStore(root, () => now).authenticate(token), 'old-phone');
+  assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'devices.json'), 'utf8'))[0].lastSeenAt, now);
+});
+
+test('expired devices are pruned at startup and before pairing; a clock moved back does not extend them', (t) => {
+  const root = temporary(t); let now = 1000;
+  const DAY = 24 * 60 * 60 * 1000;
+  const devices = createDeviceStore(root, () => now);
+  const stale = devices.pair(devices.invite().token, 'Stale');
+  now += 91 * DAY;
+  const fresh = createDeviceStore(root, () => now);
+  assert.equal(fresh.has(stale.deviceId), false, 'pruned on load');
+  const kept = fresh.pair(fresh.invite().token, 'Kept');
+  now -= 30 * DAY; // clock moved backwards
+  assert.equal(fresh.authenticate(kept.token), kept.deviceId);
+  now += 30 * DAY + 91 * DAY;
+  assert.equal(fresh.authenticate(kept.token), null);
 });
