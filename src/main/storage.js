@@ -59,4 +59,22 @@ function migrateData(legacy, target) {
   return target;
 }
 
-module.exports = { atomicJSON, migrateData };
+// The legacy folder sits beside the app with the parent folder's (often shared)
+// permissions. After migration the runtime copy is the only one QuickClip reads,
+// so a leftover CA key is pure exposure: remove it instead of leaving it behind.
+function retireLegacyCertificates(legacy, target) {
+  if (!fs.existsSync(path.join(target, 'migration.json'))) return false;
+  const certs = path.join(legacy, 'certs');
+  let stat;
+  try { stat = fs.lstatSync(certs); } catch (err) { if (err.code === 'ENOENT') return false; throw err; }
+  // Never follow a link out of the legacy folder; remove only the link itself.
+  if (stat.isSymbolicLink()) {
+    try { fs.unlinkSync(certs); } catch (_) { fs.rmdirSync(certs); }
+  } else {
+    fs.rmSync(certs, { recursive: true, force: true });
+  }
+  if (fs.existsSync(certs)) throw new Error('Legacy certificate folder could not be removed');
+  return true;
+}
+
+module.exports = { atomicJSON, migrateData, retireLegacyCertificates };

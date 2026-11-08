@@ -35,6 +35,7 @@ the installed or folder version. Prefer the installer for everyday use.
 ## What it does
 
 - Synchronizes copied text and clipboard images between Windows and iPhone.
+- Skips anything a password manager marks as private on the Windows clipboard (`ExcludeClipboardContentFromMonitorProcessing`, `CanIncludeInClipboardHistory` = 0, `CanUploadToCloudClipboard` = 0), so copied passwords never reach the phone or history.
 - Transfers photos, videos, documents, and archives up to 500 MB over local Wi-Fi.
 - Keeps a session-only clipboard history and a persistent shared-file list.
 - Encrypts traffic in transit with a locally generated CA and server certificate.
@@ -250,6 +251,9 @@ Open **Settings > General > About > Certificate Trust Settings**. Under **Enable
 </p>
 <p align="center"><sub>Full trust allows iOS to validate QuickClip's local HTTPS page and secure WebSocket connection.</sub></p>
 
+> [!NOTE]
+> The QuickClip CA carries X.509 name constraints: it can only vouch for `localhost` and private-network IPv4 addresses (10/8, 172.16/12, 192.168/16, 100.64/10, 169.254/16, 127/8). Even with full trust enabled, it cannot be used to impersonate public websites. Older versions created an unrestricted CA; QuickClip replaces it automatically on first start and asks you to remove the old profile and install the new one.
+
 ### 4. Scan and connect
 
 Return to the Windows **Pair** tab. Leave **Require password** off for QR-only joining, or turn it on, enter a password, and select **Save**. Select **Create pairing code** if no code is displayed, then scan it with the iPhone camera within five minutes. If prompted, enter the password you saved on Windows and tap **Join QuickClip**. Wait for **Connected**. In Safari, use **Share > Add to Home Screen** if you want QuickClip to launch like an app.
@@ -320,7 +324,7 @@ Clipboard history expires after **15 minutes** by default, including while sync 
 
 Shared files and partial uploads have a **2048 MB** default quota, configurable from 500 to 102400 MB. QuickClip reserves capacity for pending writes, limits uploads to two at once, and keeps at least 256 MB of disk space free. Expired shares still occupy disk space. Use **Delete saved copy** in Files to reclaim it; original source files are unaffected.
 
-Executables, scripts, shortcuts, disk images and macro-enabled Office files are blocked when shared and when opened through QuickClip, including older saved files. This extension-based safeguard is not malware scanning and does not inspect archive contents.
+Executables, scripts, shortcuts, disk images and macro-enabled Office files are blocked when shared and when opened through QuickClip, including older saved files. This extension-based safeguard is not malware scanning and does not inspect archive contents. Files received from a phone are tagged with Windows Mark-of-the-Web (Internet zone), so SmartScreen, Office Protected View and macro blocking apply however they are opened. **Open** launches only images, PDFs, text, audio, video and Office Open XML documents; other types are shown in Explorer instead.
 
 ### Limits and delivery behavior
 

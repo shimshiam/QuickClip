@@ -6,7 +6,7 @@ const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { load, temporary, fakeElectron, pngHeader } = require('./helpers');
 const { createPolicy, validateSettings } = require('../src/main/settings');
-const { migrateData } = require('../src/main/storage');
+const { migrateData, retireLegacyCertificates } = require('../src/main/storage');
 const { attachTransferHandler, createReceiptCache } = require('../src/main/transfer');
 const { createDelivery } = require('../src/pwa/delivery');
 const { imageSize } = require('../src/main/image-size');
@@ -29,6 +29,34 @@ test('migration preserves credentials and bytes, rewrites paths, and is idempote
   fs.writeFileSync(path.join(target, 'config.json'), 'new configuration');
   migrateData(old, target);
   assert.equal(fs.readFileSync(path.join(target, 'config.json'), 'utf8'), 'new configuration');
+});
+
+test('legacy certificates are removed only after a completed migration', (t) => {
+  const root = temporary(t), old = path.join(root, 'legacy'), target = path.join(root, 'runtime');
+  fs.mkdirSync(path.join(old, 'certs'), { recursive: true });
+  fs.mkdirSync(path.join(old, 'received'));
+  fs.writeFileSync(path.join(old, 'certs', 'ca.key'), 'legacy CA key');
+  fs.writeFileSync(path.join(old, 'received', 'keep.txt'), 'user file');
+  assert.equal(retireLegacyCertificates(old, target), false, 'no migration yet');
+  assert.equal(fs.existsSync(path.join(old, 'certs', 'ca.key')), true);
+  migrateData(old, target);
+  assert.equal(retireLegacyCertificates(old, target), true);
+  assert.equal(fs.existsSync(path.join(old, 'certs')), false);
+  assert.equal(fs.readFileSync(path.join(target, 'certs', 'ca.key'), 'utf8'), 'legacy CA key');
+  assert.equal(fs.readFileSync(path.join(old, 'received', 'keep.txt'), 'utf8'), 'user file');
+  assert.equal(retireLegacyCertificates(old, target), false, 'idempotent');
+});
+
+test('legacy certificate cleanup removes a link without touching its target', (t) => {
+  const root = temporary(t), old = path.join(root, 'legacy'), target = path.join(root, 'runtime');
+  const outside = path.join(root, 'outside');
+  fs.mkdirSync(outside); fs.writeFileSync(path.join(outside, 'precious.key'), 'not ours');
+  fs.mkdirSync(old); fs.mkdirSync(target);
+  fs.writeFileSync(path.join(target, 'migration.json'), '{}');
+  fs.symlinkSync(outside, path.join(old, 'certs'), 'junction');
+  assert.equal(retireLegacyCertificates(old, target), true);
+  assert.equal(fs.existsSync(path.join(old, 'certs')), false);
+  assert.equal(fs.readFileSync(path.join(outside, 'precious.key'), 'utf8'), 'not ours');
 });
 
 test('failed migration never publishes partial data or changes the source', (t) => {
@@ -192,4 +220,36 @@ test('phone waits for acknowledgement and retries with the same ID', async (t) =
   assert.equal(states.at(-1).state, 'sent');
   delivery.start({ id: 'two' }); delivery.receive({ id: 'two', ok: false, error: 'Clipboard busy' });
   assert.equal(states.at(-1).error, 'Clipboard busy');
+});
+
+test('secrets marked private by password managers are never synced', (t) => {
+  const dataDir = temporary(t), policy = createPolicy(), electron = fakeElectron();
+  let poll;
+  const monitor = load('src/main/clipboard-monitor.js', { electron }, {
+    setInterval: (callback) => { poll = callback; return 1; }, clearInterval() {},
+  });
+  monitor.configure({ dataDir, syncPolicy: policy }); monitor.startMonitoring();
+  const events = []; monitor.onClipboardChange((item) => events.push(item));
+  const copySecret = (text, formats) => { electron.clipboard.writeText(text); electron.state.formats = formats; poll(); };
+  const dword = (value) => { const b = Buffer.alloc(4); b.writeUInt32LE(value); return b; };
+
+  copySecret('hunter2', { ExcludeClipboardContentFromMonitorProcessing: Buffer.from([0]) });
+  copySecret('p@ssw0rd', { CanIncludeInClipboardHistory: dword(0) });
+  copySecret('cloud-secret', { CanUploadToCloudClipboard: dword(0) });
+  copySecret('viewer-secret', { 'Clipboard Viewer Ignore': Buffer.alloc(0) });
+  assert.equal(events.length, 0);
+  assert.equal(monitor.getHistory().length, 0);
+
+  // The marker vanishing (same text still on the clipboard) must not leak it later.
+  electron.state.formats = {}; poll();
+  assert.equal(events.length, 0);
+
+  // Explicitly allowed content and ordinary copies still sync.
+  copySecret('shareable', { CanIncludeInClipboardHistory: dword(1) });
+  copySecret('ordinary text', {});
+  assert.deepEqual(events.map((item) => item.content), ['shareable', 'ordinary text']);
+
+  // Unreadable markers fail closed.
+  electron.clipboard.writeText('unknown'); electron.clipboard.has = () => { throw new Error('busy'); }; poll();
+  assert.equal(events.length, 2);
 });

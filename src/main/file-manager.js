@@ -6,7 +6,8 @@ const crypto = require('crypto');
 const { shell } = require('electron');
 const { atomicJSON } = require('./storage');
 const { createPolicy } = require('./settings');
-const { assertSafeFile } = require('./file-safety');
+const os = require('os');
+const { assertSafeFile, canOpenDirectly } = require('./file-safety');
 
 /**
  * QuickClip – File Storage Manager
@@ -64,6 +65,24 @@ function createFileManager(dataDir, policy = createPolicy()) {
   }
 
   let index = loadIndex();
+
+  // Files that arrive from a phone get Mark-of-the-Web (Internet zone), so Windows
+  // treats them like downloads: SmartScreen, Office Protected View and macro
+  // blocking apply however they are opened. Without it, they look locally made.
+  function markOfTheWeb(filePath) {
+    if (os.platform() !== 'win32') return true;
+    try {
+      fs.writeFileSync(`${filePath}:Zone.Identifier`, '[ZoneTransfer]\r\nZoneId=3\r\n');
+      return true;
+    } catch (err) {
+      console.error('[FileManager] Could not add Mark-of-the-Web:', err.message);
+      return false;
+    }
+  }
+  // Entries saved before origins were recorded may have come from a phone.
+  for (const entry of index) {
+    if (entry && entry.origin !== 'desktop' && isSafePath(entry.path) && fs.existsSync(entry.path)) markOfTheWeb(entry.path);
+  }
 
   function publish(entry) {
     const nextIndex = [...index, entry];
@@ -160,6 +179,7 @@ function createFileManager(dataDir, policy = createPolicy()) {
       console.error('[FileManager] Failed to write file:', err.message);
       throw err;
     }
+    markOfTheWeb(fullPath);
 
     const entry = {
       id,
@@ -167,6 +187,7 @@ function createFileManager(dataDir, policy = createPolicy()) {
       path: fullPath,
       size: buffer.length,
       timestamp: Date.now(),
+      origin: 'device',
     };
 
     publish(entry);
@@ -207,6 +228,7 @@ function createFileManager(dataDir, policy = createPolicy()) {
       console.error('[FileManager] Failed to move file from tmp:', err.message);
       throw err;
     }
+    markOfTheWeb(fullPath);
 
     let actualSize = size;
     try {
@@ -219,6 +241,7 @@ function createFileManager(dataDir, policy = createPolicy()) {
       path: fullPath,
       size: actualSize,
       timestamp: Date.now(),
+      origin: 'device',
     };
 
     publish(entry);
@@ -263,6 +286,7 @@ function createFileManager(dataDir, policy = createPolicy()) {
       path: fullPath,
       size: actualSize,
       timestamp: Date.now(),
+      origin: 'desktop',
     };
 
     publish(entry);
@@ -322,8 +346,10 @@ function createFileManager(dataDir, policy = createPolicy()) {
   }
 
   /**
-   * Open a file with the system's default application.
+   * Open a file with the system's default application. Types outside the
+   * direct-open allowlist are revealed in Explorer instead.
    * @param {string} id
+   * @returns {Promise<'opened'|'revealed'|undefined>}
    */
   async function openFile(id) {
     const entry = index.find((e) => e.id === id);
@@ -333,8 +359,16 @@ function createFileManager(dataDir, policy = createPolicy()) {
     }
     try {
       assertSafeFile(entry.name);
+      // Writing a stream to a missing path would recreate it as an empty file.
+      if (!fs.existsSync(entry.path)) throw new Error('File is no longer available');
+      const marked = entry.origin === 'desktop' || markOfTheWeb(entry.path);
+      if (!marked || !canOpenDirectly(entry.name)) {
+        shell.showItemInFolder(entry.path);
+        return 'revealed';
+      }
       const error = await shell.openPath(entry.path);
       if (error) throw new Error(error);
+      return 'opened';
     } catch (err) {
       console.error('[FileManager] Failed to open file:', err.message);
       throw err;

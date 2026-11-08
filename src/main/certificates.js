@@ -24,8 +24,8 @@ function needsRenewal(cert, key, ca, localIP) {
 /**
  * QuickClip – Local CA + Server Certificate Generation
  *
- * Uses the `mkcert` npm package to create a local Certificate Authority and
- * per-IP server certificates.  Certs are persisted to `<dataDir>/certs/` and
+ * Creates a name-constrained local Certificate Authority (see cert-authority.js)
+ * and per-IP server certificates.  Certs are persisted to `<dataDir>/certs/` and
  * renewed at startup when the LAN IP changes or expiry is within 30 days.
  */
 
@@ -33,10 +33,13 @@ function needsRenewal(cert, key, ca, localIP) {
 /**
  * @param {string} dataDir  – Absolute path to the application data directory
  * @param {string} localIP  – Current LAN IPv4 address (e.g. "192.168.1.42")
- * @returns {Promise<{ ca: string, cert: string, key: string, caPath: string }>}
+ * @returns {Promise<{ ca: string, cert: string, key: string, caPath: string, rotated: boolean }>}
  */
 async function generateCertificates(dataDir, localIP) {
-  const { createCA, createCert } = require('mkcert');
+  const { createCA, createCert, hasNameConstraints, isPermittedAddress } = require('./cert-authority');
+  if (!isPermittedAddress(localIP)) {
+    console.warn(`[Certs] ${localIP} is not a private-network address; phones will reject its certificate. Select a LAN adapter from the tray menu.`);
+  }
 
   const certsDir = path.join(dataDir, 'certs');
   const caPath   = path.join(certsDir, 'ca.crt');
@@ -44,6 +47,8 @@ async function generateCertificates(dataDir, localIP) {
   const certPath = path.join(certsDir, 'server.crt');
   const keyPath  = path.join(certsDir, 'server.key');
   const ipPath   = path.join(certsDir, 'ip.txt');
+  // Survives crashes and failed starts so the "reinstall on iPhone" notice is never lost.
+  const rotationPath = path.join(certsDir, 'rotation-pending');
 
   try {
     // Fail closed before reading existing keys or creating any key material.
@@ -51,20 +56,22 @@ async function generateCertificates(dataDir, localIP) {
     if (fs.existsSync(caPath) !== fs.existsSync(caKeyPath)) {
       throw new Error('The local CA is incomplete. Restore its matching certificate and key from a backup.');
     }
+    // An unconstrained root trusted on a phone can vouch for any website, so a
+    // CA created before name constraints existed is replaced (once) by a new one.
+    const unrestricted = (pem) => { try { return !hasNameConstraints(pem); } catch (_) { return false; } }; // unreadable CAs fail below
+    if (fs.existsSync(caPath) && fs.existsSync(caKeyPath) && unrestricted(fs.readFileSync(caPath, 'utf-8'))) {
+      console.log('[Certs] Replacing unrestricted CA with a name-constrained CA…');
+      fs.writeFileSync(rotationPath, new Date().toISOString(), 'utf-8');
+      for (const file of [caKeyPath, caPath, certPath, keyPath, ipPath]) fs.rmSync(file, { force: true });
+    }
     // ── First-run: no CA exists yet ───────────────────────────────────────────
     if (!fs.existsSync(caPath) || !fs.existsSync(caKeyPath)) {
       console.log('[Certs] First run – generating CA and server certificate…');
 
       fs.mkdirSync(certsDir, { recursive: true });
 
-      // 1. Create CA
-      const ca = await createCA({
-        organization: 'QuickClip',
-        countryCode: 'US',
-        state: 'Local',
-        locality: 'Local',
-        validity: 3650, // ~10 years
-      });
+      // 1. Create CA (restricted to private-network names)
+      const ca = await createCA({ validity: 3650 }); // ~10 years
 
       // 2. Create server cert signed by the CA
       const serverCert = await createCert({
@@ -87,6 +94,7 @@ async function generateCertificates(dataDir, localIP) {
         cert: serverCert.cert,
         key: serverCert.key,
         caPath,
+        rotated: fs.existsSync(rotationPath),
       };
     }
 
@@ -124,7 +132,7 @@ async function generateCertificates(dataDir, localIP) {
       console.log('[Certs] Loaded existing certificates for', localIP);
     }
 
-    return { ca: caCert, cert, key, caPath };
+    return { ca: caCert, cert, key, caPath, rotated: fs.existsSync(rotationPath) };
   } catch (err) {
     console.error('[Certs] Certificate generation failed:', err);
     throw err; // Propagate — the server cannot start without certs
@@ -132,6 +140,12 @@ async function generateCertificates(dataDir, localIP) {
 }
 
 // ── Exports ─────────────────────────────────────────────────────────────────────
+/** Call once the user has seen the CA-replacement notice. */
+function acknowledgeRotation(dataDir) {
+  fs.rmSync(path.join(dataDir, 'certs', 'rotation-pending'), { force: true });
+}
+
 module.exports = {
   generateCertificates,
+  acknowledgeRotation,
 };

@@ -23,6 +23,28 @@ function imageFingerprint(img) {
   return `${width}x${height}:${hash(img.toBitmap())}`;
 }
 
+// Password managers (KeePass, 1Password, Bitwarden, ...) tag secrets with these
+// registered Windows clipboard formats so clipboard history, cloud sync and
+// monitors skip them. QuickClip honours the same opt-outs before syncing.
+const EXCLUDE_FORMATS = ['ExcludeClipboardContentFromMonitorProcessing', 'Clipboard Viewer Ignore'];
+const OPT_OUT_FORMATS = ['CanIncludeInClipboardHistory', 'CanUploadToCloudClipboard']; // DWORD 0 = do not share
+
+function isPrivateClipboard() {
+  if (typeof clipboard.has !== 'function') return false;
+  try {
+    if (EXCLUDE_FORMATS.some((format) => clipboard.has(format))) return true;
+    return OPT_OUT_FORMATS.some((format) => {
+      if (!clipboard.has(format)) return false;
+      const value = clipboard.readBuffer(format);
+      return value.length >= 4 && value.readUInt32LE(0) === 0;
+    });
+  } catch (err) {
+    // If the markers cannot be read, skip this change rather than risk leaking a secret.
+    console.error('[Clipboard] Could not read privacy formats:', err.message);
+    return true;
+  }
+}
+
 function readImageState() {
   if (!policy.allows('image')) return { fingerprint: null };
   const img = clipboard.readImage();
@@ -97,8 +119,16 @@ function validateImage(buffer) {
 
 function poll() {
   try {
+    const privateBefore = isPrivateClipboard();
     const text = clipboard.readText();
     const textHash = text ? hash(text) : '';
+    // Check again after reading, so a secret copied mid-poll is still caught.
+    if (privateBefore || isPrivateClipboard()) {
+      // Remember what was skipped, so it is not sent once the marker disappears.
+      lastText = textHash;
+      lastImage = readImageState().fingerprint;
+      return;
+    }
     if (textHash !== lastText) {
       lastText = textHash;
       if (text && policy.allows('text') && Buffer.byteLength(text) <= policy.get().maxTextBytes) notify(record('text', text, 'local'));

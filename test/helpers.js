@@ -22,7 +22,7 @@ function temporary(t) {
   return dir;
 }
 function fakeElectron() {
-  const state = { text: '', image: Buffer.alloc(0), fail: false };
+  const state = { text: '', image: Buffer.alloc(0), fail: false, formats: {} };
   const image = (buffer) => ({
     isEmpty: () => !buffer.length,
     toPNG: () => Buffer.from(buffer),
@@ -35,9 +35,11 @@ function fakeElectron() {
     createFromBuffer: (buffer) => image(buffer[0] === 137 ? buffer : Buffer.alloc(0)),
   }, clipboard: {
     readText: () => state.text,
+    has: (format) => Object.hasOwn(state.formats, format),
+    readBuffer: (format) => state.formats[format] || Buffer.alloc(0),
     readImage: () => image(state.image),
-    writeText: (text) => { if (state.fail) throw new Error('Clipboard busy'); state.text = text; state.image = Buffer.alloc(0); },
-    writeImage: (img) => { if (state.fail) throw new Error('Clipboard busy'); state.image = img.toPNG(); state.text = ''; },
+    writeText: (text) => { if (state.fail) throw new Error('Clipboard busy'); state.text = text; state.image = Buffer.alloc(0); state.formats = {}; },
+    writeImage: (img) => { if (state.fail) throw new Error('Clipboard busy'); state.image = img.toPNG(); state.text = ''; state.formats = {}; },
   } };
 }
 // Header fixture for mocked decoding. Real native decoding is tested by the

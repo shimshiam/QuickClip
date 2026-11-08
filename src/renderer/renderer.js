@@ -739,7 +739,10 @@
       return new Blob([result.bytes], { type: result.type });
     });
     el.querySelector('.file-open-btn').addEventListener('click', () => {
-      window.quickclip.openFile(file.path || file.id).then((ok) => { if (!ok) showToast('File could not be opened or is blocked for safety', 'error'); });
+      window.quickclip.openFile(file.path || file.id).then((result) => {
+        if (!result) showToast('File could not be opened or is blocked for safety', 'error');
+        else if (result === 'revealed') showToast('Shown in Explorer. Windows will check this file type when you open it.');
+      });
     });
 
     el.querySelector('.file-folder-btn').addEventListener('click', () => {

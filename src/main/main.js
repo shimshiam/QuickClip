@@ -32,7 +32,7 @@ const {
   broadcastSettings,
   broadcastRaw,
 } = require('./server');
-const { generateCertificates } = require('./certificates');
+const { generateCertificates, acknowledgeRotation } = require('./certificates');
 const {
   getLocalIP,
   getNetworkInterfaces,
@@ -42,7 +42,7 @@ const {
 } = require('./network');
 const { createFileManager } = require('./file-manager');
 const { createPolicy, validateSettings } = require('./settings');
-const { migrateData, atomicJSON } = require('./storage');
+const { migrateData, atomicJSON, retireLegacyCertificates } = require('./storage');
 const { createDeviceStore } = require('./devices');
 const { hashPassword } = require('./pairing-password');
 
@@ -316,8 +316,8 @@ function registerIPCHandlers() {
         const allFiles = fileManager.listFiles();
         const found = allFiles.find(f => f.id === filePathOrId || f.path === filePathOrId);
         if (found) {
-          await fileManager.openFile(found.id);
-          return true;
+          // 'opened', or 'revealed' when the type is shown in Explorer instead of launched.
+          return await fileManager.openFile(found.id) || false;
         }
       }
       console.warn('[IPC] open-file rejected unauthorized path or unknown file:', filePathOrId);
@@ -477,6 +477,11 @@ app.on('ready', async () => {
 
     // 1. Load / create config
     DATA_DIR = migrateData(LEGACY_DATA_DIR, path.join(app.getPath('userData'), 'runtime'));
+    try {
+      if (retireLegacyCertificates(LEGACY_DATA_DIR, DATA_DIR)) console.log('[Main] Removed legacy certificate copies');
+    } catch (err) {
+      console.error('[Main] Could not remove legacy certificates:', err.message);
+    }
     CONFIG_PATH = path.join(DATA_DIR, 'config.json');
     config = loadConfig();
     devices = createDeviceStore(DATA_DIR);
@@ -514,6 +519,19 @@ app.on('ready', async () => {
 
     // 6. Create the hidden main window
     createMainWindow();
+    if (certData.rotated) {
+      // Phones that trusted the old CA must install the new one; device pairings are unaffected.
+      dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        title: 'Reinstall the QuickClip certificate on your phone',
+        message: 'QuickClip replaced its certificate authority with a restricted one.',
+        detail: 'The new certificate can only vouch for local-network addresses, so it cannot be misused for real websites.\n\n'
+          + 'On your iPhone:\n1. Settings > General > VPN & Device Management: remove the old QuickClip profile.\n'
+          + '2. On the Pair tab here, select Download CA Certificate and install it on the iPhone.\n'
+          + '3. Settings > General > About > Certificate Trust Settings: enable full trust for the new QuickClip CA.\n\n'
+          + 'Your paired devices stay paired.',
+      }).then(() => acknowledgeRotation(DATA_DIR)).catch((err) => console.error('[Main] Rotation notice failed:', err.message));
+    }
 
     // 7. Register IPC handlers
     registerIPCHandlers();

@@ -7,7 +7,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createDeviceStore } = require('../src/main/devices');
 const { createPolicy } = require('../src/main/settings');
-const { assertSafeFile } = require('../src/main/file-safety');
+const { assertSafeFile, canOpenDirectly } = require('../src/main/file-safety');
 const { load, temporary, fakeElectron, pngHeader } = require('./helpers');
 
 test('password device review validates snapshots, rolls back failed saves, and applies removals and permissions', t => {
@@ -202,4 +202,54 @@ test('failed deletion retains the listed file so it can be retried', (t) => {
   assert.ok(fs.existsSync(file.path));
   locked = false; assert.equal(manager.deleteFile(file.id), true);
   assert.equal(manager.listFiles().length, 0);
+});
+
+test('risky Windows types missing from the original list are blocked; ordinary documents are allowed', () => {
+  for (const name of ['addin.xll', 'run.ws', 'component.wsc', 'scriptlet.sct', 'connect.rdp', 'share.library-ms',
+    'search.searchConnector-ms', 'panel.settingcontent-ms', 'leak.theme', 'install.appinstaller', 'fix.diagcab',
+    'book.xlsb', 'db.accde', 'tool.msu', 'MACRO.XLAM. ']) {
+    assert.throws(() => assertSafeFile(name), /blocked/, name);
+  }
+  for (const name of ['resume.docx', 'notes.pdf', 'photos.zip', 'IMG_0001.HEIC', 'song.mp3']) assert.doesNotThrow(() => assertSafeFile(name), name);
+  for (const name of ['a.png', 'b.PDF', 'c.docx', 'd.mov', 'e.txt']) assert.equal(canOpenDirectly(name), true, name);
+  for (const name of ['a.zip', 'b.html', 'c.svg', 'd.doc', 'e.xls', 'f.one', 'g']) assert.equal(canOpenDirectly(name), false, name);
+});
+
+test('phone files get Mark-of-the-Web and only allowlisted types are launched directly', { skip: process.platform !== 'win32' && 'NTFS alternate data streams are Windows-only' }, async (t) => {
+  const root = temporary(t), received = path.join(root, 'received'); fs.mkdirSync(received);
+  const zone = (file) => { try { return fs.readFileSync(file + ':Zone.Identifier', 'utf8'); } catch (_) { return null; } };
+  // A file saved before origins were recorded is marked when QuickClip starts.
+  const legacy = path.join(received, 'legacy.pdf'); fs.writeFileSync(legacy, '%PDF');
+  fs.writeFileSync(path.join(received, 'index.json'), JSON.stringify([{ id: 'legacy', name: 'legacy.pdf', path: legacy, timestamp: Date.now() }]));
+  const calls = [];
+  const manager = load('src/main/file-manager.js', { electron: { shell: {
+    openPath: async (file) => { calls.push(['open', path.basename(file)]); return ''; },
+    showItemInFolder: (file) => { calls.push(['reveal', path.basename(file)]); },
+  } } }).createFileManager(root);
+  assert.match(zone(legacy), /ZoneId=3/);
+
+  const photo = manager.saveFile(Buffer.from('png bytes'), 'photo.png');
+  const archive = manager.saveFile(Buffer.from('zip bytes'), 'photos.zip');
+  assert.match(zone(photo.path), /\[ZoneTransfer\]\r\nZoneId=3/);
+  assert.match(zone(archive.path), /ZoneId=3/);
+  assert.equal(fs.readFileSync(photo.path, 'utf8'), 'png bytes', 'main stream is untouched');
+
+  const source = path.join(root, 'mine.txt'); fs.writeFileSync(source, 'my own file');
+  const desktop = manager.saveDesktopFile(source);
+  assert.equal(zone(desktop.path), null, 'files shared from this PC are not marked');
+
+  assert.equal(await manager.openFile(photo.id), 'opened');
+  assert.equal(await manager.openFile(archive.id), 'revealed');
+  assert.deepEqual(calls, [['open', path.basename(photo.path)], ['reveal', path.basename(archive.path)]]);
+});
+
+test('opening a file deleted outside QuickClip fails without recreating it', async (t) => {
+  const root = temporary(t);
+  let launched = false;
+  const manager = load('src/main/file-manager.js', { electron: { shell: { openPath: async () => { launched = true; return ''; }, showItemInFolder() {} } } }).createFileManager(root);
+  const saved = manager.saveFile(Buffer.from('png'), 'photo.png');
+  fs.unlinkSync(saved.path);
+  await assert.rejects(manager.openFile(saved.id), /no longer available/);
+  assert.equal(fs.existsSync(saved.path), false);
+  assert.equal(launched, false);
 });
