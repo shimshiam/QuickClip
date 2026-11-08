@@ -66,6 +66,7 @@ test('failed migration never publishes partial data or changes the source', (t) 
   fs.writeFileSync(path.join(old, 'received', 'index.json'), raw);
   assert.throws(() => migrateData(old, target));
   assert.equal(fs.existsSync(target), false);
+  assert.deepEqual(fs.readdirSync(root).filter((name) => name.startsWith('quickclip-migration-')), [], 'no staging copy left behind');
   assert.equal(fs.readFileSync(path.join(old, 'received', 'index.json'), 'utf8'), raw);
 });
 
@@ -252,4 +253,20 @@ test('secrets marked private by password managers are never synced', (t) => {
   // Unreadable markers fail closed.
   electron.clipboard.writeText('unknown'); electron.clipboard.has = () => { throw new Error('busy'); }; poll();
   assert.equal(events.length, 2);
+});
+
+test('stale migration folders (possible CA key copies) are removed on start, without following links', (t) => {
+  const root = temporary(t), target = path.join(root, 'runtime');
+  const stale = path.join(root, 'quickclip-migration-Ab12Cd');
+  fs.mkdirSync(path.join(stale, 'certs'), { recursive: true });
+  fs.writeFileSync(path.join(stale, 'certs', 'ca.key'), 'stale key copy');
+  const outside = path.join(root, 'outside'); fs.mkdirSync(outside); fs.writeFileSync(path.join(outside, 'keep.txt'), 'keep');
+  fs.symlinkSync(outside, path.join(root, 'quickclip-migration-Zz99Yy'), 'junction');
+  fs.mkdirSync(path.join(root, 'quickclip-migration-notours-folder'));
+  migrateData(path.join(root, 'legacy'), target);
+  assert.equal(fs.existsSync(stale), false);
+  assert.equal(fs.existsSync(path.join(root, 'quickclip-migration-Zz99Yy')), false);
+  assert.equal(fs.readFileSync(path.join(outside, 'keep.txt'), 'utf8'), 'keep');
+  assert.equal(fs.existsSync(path.join(root, 'quickclip-migration-notours-folder')), true, 'only names QuickClip creates');
+  assert.equal(fs.existsSync(path.join(target, 'migration.json')), true);
 });
