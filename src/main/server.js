@@ -19,6 +19,16 @@ const disconnectCallbacks = [];
 const fileCallbacks = [];
 let activePolicy = createPolicy();
 
+// The phone sends its credential in the Sec-WebSocket-Protocol header instead of
+// the URL, so it never appears in request lines or URL logs.
+const SOCKET_PROTOCOL = 'quickclip.v1';
+const AUTH_PROTOCOL_PREFIX = 'quickclip.auth.';
+function socketToken(req) {
+  const offered = String(req.headers['sec-websocket-protocol'] || '').split(',').map((value) => value.trim());
+  const auth = offered.find((value) => value.startsWith(AUTH_PROTOCOL_PREFIX));
+  return auth ? auth.slice(AUTH_PROTOCOL_PREFIX.length) : null;
+}
+
 const publicFile = ({ id, name, size, timestamp, available = true }) => ({ id, name, size, timestamp, available });
 const deviceInfo = ({ id, deviceId, address, connectedAt }) => ({ id, deviceId, address, connectedAt });
 function notify(callbacks, value) { for (const cb of callbacks) { try { cb(value); } catch (err) { console.error(err.message); } } }
@@ -218,11 +228,14 @@ function createServer(certData, options) {
 
   const httpsServer = https.createServer({ cert: certData.cert, key: certData.key, ca: certData.ca }, app);
   const wss = new WebSocket.Server({ server: httpsServer, maxPayload: DEFAULTS.maxImageBytes,
+    handleProtocols: (protocols) => (protocols.has(SOCKET_PROTOCOL) ? SOCKET_PROTOCOL : false),
     verifyClient: ({ req }, done) => done(trustedRequest(req), 403, 'Origin or host is not allowed') });
   wss.on('connection', (ws, req) => {
     ws.on('error', (err) => console.error('[WebSocket]', err.message));
-    const url = new URL(req.url, `https://${req.headers.host}`);
-    const deviceId = devices.authenticate(url.searchParams.get('token'));
+    // Credentials in the URL are no longer accepted. A distinct code makes an old,
+    // still-open phone page keep its credential and retry; reloading the page loads the new script.
+    if (new URL(req.url, `https://${req.headers.host}`).searchParams.has('token')) { ws.close(4005, 'Reload QuickClip'); return; }
+    const deviceId = devices.authenticate(socketToken(req));
     if (!deviceId) { ws.close(4001, 'Unauthorized'); return; }
     if (!allowedDevice(deviceId)) { ws.close(4003, 'Remote access blocked'); return; }
     const client = { ws, settings: () => deviceSettings(deviceId), canView: () => allowedDevice(deviceId) && devices.allows(deviceId, 'view'), deviceId, owner: httpsServer, id: crypto.randomUUID(), address: req.socket.remoteAddress, connectedAt: Date.now() };

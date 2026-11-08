@@ -161,7 +161,8 @@
     $('.overlay-title').textContent = 'Connecting to QuickClip';
 
     try {
-      ws = new WebSocket(`wss://${serverIp}:${serverPort}?token=${authToken}`);
+      // The credential travels as a WebSocket subprotocol, never in the URL.
+      ws = new WebSocket(`wss://${serverIp}:${serverPort}`, ['quickclip.v1', 'quickclip.auth.' + authToken]);
       ws.binaryType = 'arraybuffer';
     } catch (e) {
       console.error('WebSocket creation failed:', e);

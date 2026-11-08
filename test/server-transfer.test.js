@@ -59,7 +59,7 @@ async function setup(t, prepare = () => {}) {
   const credential = await pairedResponse.json();
   const headers = { Authorization: `Bearer ${credential.token}` };
   async function connect() {
-    const phone = new WebSocket(base.replace('http:', 'ws:') + '/?token=' + credential.token);
+    const phone = new WebSocket(base.replace('http:', 'ws:') + '/', ['quickclip.v1', 'quickclip.auth.' + credential.token]);
     const messages = [];
     phone.on('message', (data) => messages.push(JSON.parse(data.toString())));
     await once(phone, 'open');
@@ -237,10 +237,19 @@ test('uploads, scoped download tickets, authentication and origin restrictions',
     method: 'POST', headers: { ...s.headers, 'Content-Type': 'application/json' }, body: '{',
   })).status, 400);
   assert.equal((await fetch(s.base + '/api/files', { headers: { ...s.headers, Origin: 'https://evil.example' } })).status, 403);
-  const denied = new WebSocket(s.base.replace('http:', 'ws:') + '/?token=test-token', { origin: 'https://evil.example' });
+  const socketUrl = s.base.replace('http:', 'ws:') + '/';
+  const denied = new WebSocket(socketUrl, ['quickclip.v1', 'quickclip.auth.' + s.credential.token], { origin: 'https://evil.example' });
   const [err] = await once(denied, 'error'); assert.match(err.message, /403/);
-  const unauthorized = new WebSocket(s.base.replace('http:', 'ws:') + '/?token=wrong');
+  const unauthorized = new WebSocket(socketUrl, ['quickclip.v1', 'quickclip.auth.wrong']);
   const [code] = await once(unauthorized, 'close'); assert.equal(code, 4001);
+  const missing = new WebSocket(socketUrl, ['quickclip.v1']);
+  assert.equal((await once(missing, 'close'))[0], 4001);
+  // A valid credential in the URL is refused with a retry code that does not unpair old pages.
+  const inUrl = new WebSocket(socketUrl + '?token=' + s.credential.token);
+  assert.equal((await once(inUrl, 'close'))[0], 4005);
+  // The server selects only the protocol name; the credential is never echoed back.
+  const ok = new WebSocket(socketUrl, ['quickclip.v1', 'quickclip.auth.' + s.credential.token]);
+  await once(ok, 'open'); assert.equal(ok.protocol, 'quickclip.v1'); ok.close();
   const double = new FormData(); double.append('file', new Blob(['1']), '1.txt'); double.append('file', new Blob(['2']), '2.txt');
   const rejected = await fetch(s.base + '/api/upload', { method: 'POST', headers: s.headers, body: double });
   assert.equal(rejected.status, 400); assert.ok((await rejected.json()).error);
