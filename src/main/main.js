@@ -125,6 +125,18 @@ function selectNetwork(preferred) {
   }
 }
 
+// ── Web contents hardening ──────────────────────────────────────────────────────
+// The UI is bundled and never needs to open windows, navigate elsewhere, embed
+// webviews, or use device permissions. Deny all of it for every web contents.
+const ALLOWED_PERMISSIONS = new Set(['clipboard-sanitized-write', 'fullscreen']);
+app.on('web-contents-created', (_event, contents) => {
+  contents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  contents.on('will-navigate', (event) => event.preventDefault());
+  contents.on('will-attach-webview', (event) => event.preventDefault());
+  contents.session.setPermissionRequestHandler((_contents, permission, callback) => callback(ALLOWED_PERMISSIONS.has(permission)));
+  contents.session.setPermissionCheckHandler((_contents, permission) => ALLOWED_PERMISSIONS.has(permission));
+});
+
 // ── Single instance lock ────────────────────────────────────────────────────────
 const gotLock = app.requestSingleInstanceLock();
 
@@ -158,6 +170,9 @@ function createMainWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
+      webSecurity: true,
+      webviewTag: false,
     },
   });
 

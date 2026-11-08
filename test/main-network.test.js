@@ -14,20 +14,20 @@ test('network override persists, restarts, and updates certificate, server and p
   let interfaces = { Ethernet: [{ address: '192.168.1.10', family: 'IPv4' }], VPN: [{ address: '10.8.0.2', family: 'IPv4' }] };
   async function boot() {
     const app = new EventEmitter(), ipc = new Map(), errors = [];
-    let controls, certIP, serverOptions, failSave = false, relaunches = 0, quits = 0;
+    let controls, certIP, serverOptions, mdnsArgs, windowOptions, failSave = false, relaunches = 0, quits = 0;
     app.disableHardwareAcceleration = () => {};
     app.requestSingleInstanceLock = () => true;
     app.getPath = () => root;
     app.relaunch = () => { relaunches++; };
     app.quit = () => { quits++; app.emit('before-quit'); };
     class Window extends EventEmitter {
-      constructor() { super(); this.webContents = new EventEmitter(); }
+      constructor(options) { super(); windowOptions = options; this.webContents = new EventEmitter(); }
       loadFile() {}
     }
     const network = load('src/main/network.js', { os: { networkInterfaces: () => interfaces } });
     load('src/main/main.js', {
       electron: { app, BrowserWindow: Window, ipcMain: { handle: (key, fn) => ipc.set(key, fn) }, dialog: { showErrorBox: (_title, message) => errors.push(message) } },
-      './network': { ...network, generateQRCode: async (url, token) => `${url}#${token}`, startMDNS() {}, stopMDNS() {} },
+      './network': { ...network, generateQRCode: async (url, token) => `${url}#${token}`, startMDNS: (...args) => { mdnsArgs = args; }, stopMDNS() {} },
       './certificates': { generateCertificates: async (_root, ip) => { certIP = ip; return {}; } },
       './storage': { migrateData: () => root, atomicJSON: (file, value) => { if (failSave) throw new Error('Disk full'); atomicJSON(file, value); } },
       './clipboard-monitor': { configure() {}, startMonitoring() {}, stopMonitoring() {}, clearHistory() {}, onClipboardChange() {} },
@@ -41,7 +41,7 @@ test('network override persists, restarts, and updates certificate, server and p
       }, getConnectedDevices: () => [], onDeviceConnect() {}, onDeviceDisconnect() {}, onFileReceived() {} },
     }, { process });
     await app.listeners('ready')[0]();
-    return { controls, ipc, errors, certIP, serverOptions, fail: () => { failSave = true; },
+    return { app, controls, ipc, errors, certIP, serverOptions, mdnsArgs, windowOptions, fail: () => { failSave = true; },
       get relaunches() { return relaunches; }, get quits() { return quits; } };
   }
   const first = await boot();
@@ -53,6 +53,25 @@ test('network override persists, restarts, and updates certificate, server and p
   const second = await boot();
   assert.equal(second.certIP, '10.8.0.2');
   assert.equal(second.serverOptions.hostnames[0], second.certIP);
+  assert.equal(second.serverOptions.host, second.certIP, 'listens only on the selected adapter');
+  assert.deepEqual([...second.mdnsArgs], [8443, second.certIP], 'advertises only on the selected adapter');
+  assert.equal(second.windowOptions.webPreferences.sandbox, true);
+  assert.equal(second.windowOptions.webPreferences.contextIsolation, true);
+  assert.equal(second.windowOptions.webPreferences.nodeIntegration, false);
+  // Every web contents is denied new windows, navigation, webviews and device permissions.
+  const contents = new EventEmitter(); let openHandler, requestHandler, checkHandler;
+  contents.setWindowOpenHandler = (fn) => { openHandler = fn; };
+  contents.session = { setPermissionRequestHandler: (fn) => { requestHandler = fn; }, setPermissionCheckHandler: (fn) => { checkHandler = fn; } };
+  second.app.emit('web-contents-created', {}, contents);
+  assert.equal(openHandler({ url: 'https://evil.example' }).action, 'deny');
+  let prevented = 0;
+  contents.emit('will-navigate', { preventDefault: () => { prevented++; } }, 'https://evil.example');
+  contents.emit('will-attach-webview', { preventDefault: () => { prevented++; } });
+  assert.equal(prevented, 2);
+  const granted = (permission) => new Promise((resolve) => requestHandler(null, permission, resolve));
+  for (const permission of ['media', 'geolocation', 'notifications', 'openExternal', 'clipboard-read']) assert.equal(await granted(permission), false, permission);
+  assert.equal(await granted('clipboard-sanitized-write'), true);
+  assert.equal(checkHandler(null, 'media'), false);
   assert.equal(second.ipc.get('get-status')().ip, second.certIP);
   const pairing = await second.ipc.get('get-qr-code')();
   assert.equal(pairing.split('#')[0], 'https://10.8.0.2:8443');
