@@ -270,3 +270,23 @@ test('stale migration folders (possible CA key copies) are removed on start, wit
   assert.equal(fs.existsSync(path.join(root, 'quickclip-migration-notours-folder')), true, 'only names QuickClip creates');
   assert.equal(fs.existsSync(path.join(target, 'migration.json')), true);
 });
+
+test('a secret replaced while the clipboard is being read is never sent', (t) => {
+  const dataDir = temporary(t), policy = createPolicy(), electron = fakeElectron();
+  let poll;
+  const monitor = load('src/main/clipboard-monitor.js', { electron }, {
+    setInterval: (callback) => { poll = callback; return 1; }, clearInterval() {},
+  });
+  monitor.configure({ dataDir, syncPolicy: policy }); monitor.startMonitoring();
+  const events = []; monitor.onClipboardChange((item) => events.push(item.content));
+  // The first read catches a password; by the time markers are checked it has
+  // already been replaced, so the markers look clean.
+  electron.state.text = 'later';
+  const reads = ['hunter2'];
+  const readText = electron.clipboard.readText;
+  electron.clipboard.readText = () => (reads.length ? reads.shift() : readText());
+  poll();
+  assert.deepEqual(events, []);
+  poll();
+  assert.deepEqual(events, ['later']);
+});

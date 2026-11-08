@@ -119,22 +119,33 @@ function validateImage(buffer) {
 
 function poll() {
   try {
+    // Read the clipboard between two privacy checks, then re-read the text. If the
+    // clipboard changed while it was being read (e.g. a secret replaced before its
+    // markers were checked), nothing is sent; the next poll sees a stable state.
     const privateBefore = isPrivateClipboard();
     const text = clipboard.readText();
     const textHash = text ? hash(text) : '';
-    // Check again after reading, so a secret copied mid-poll is still caught.
-    if (privateBefore || isPrivateClipboard()) {
+    const imageState = readImageState();
+    const privateAfter = isPrivateClipboard();
+    const textAfter = clipboard.readText();
+    const textAfterHash = textAfter ? hash(textAfter) : '';
+    if (privateBefore || privateAfter) {
       // Remember what was skipped, so it is not sent once the marker disappears.
-      lastText = textHash;
-      lastImage = readImageState().fingerprint;
+      lastText = textAfterHash;
+      lastImage = imageState.fingerprint;
       return;
     }
+    if (textAfterHash !== textHash) return;
     if (textHash !== lastText) {
       lastText = textHash;
       if (text && policy.allows('text') && Buffer.byteLength(text) <= policy.get().maxTextBytes) notify(record('text', text, 'local'));
     }
-    const { img, fingerprint } = readImageState();
+    const { img, fingerprint } = imageState;
     const previous = lastImage;
+    if (img && previous !== null && fingerprint !== previous) {
+      // Confirm the new image is still there and still not private before sending it.
+      if (readImageState().fingerprint !== fingerprint || isPrivateClipboard()) return;
+    }
     lastImage = fingerprint;
     // Re-enabling sync seeds the current image without sending copies made while disabled.
     if (!img || previous === null || fingerprint === previous) return;
