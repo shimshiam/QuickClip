@@ -32,6 +32,12 @@ const monitor = load('src/main/clipboard-monitor.js', { electron: isolatedElectr
 const policy = createPolicy();
 const fileManager = load('src/main/file-manager.js', { electron: isolatedElectron }).createFileManager(root);
 
+// Opening a new invitation in the same tab triggers the page's own reload, which
+// can abort loadURL's promise; the page state is asserted separately.
+async function openInvitation(url) {
+  await phone.loadURL(url).catch((err) => { if (!['ERR_ABORTED', 'ERR_FAILED'].includes(err.code)) throw err; });
+}
+
 async function eventually(window, expression) {
   for (let i = 0; i < 200; i++) {
     if (await window.webContents.executeJavaScript(expression)) return;
@@ -73,11 +79,12 @@ app.whenReady().then(async () => {
   const isolatedSession = session.fromPartition('quickclip-smoke');
   isolatedSession.setCertificateVerifyProc((request, callback) => callback(request.hostname === '127.0.0.1' ? 0 : -3));
   phone = new BrowserWindow({ show: false, width: 390, height: 844, webPreferences: { offscreen: true, session: isolatedSession, backgroundThrottling: false } });
+  phone.webContents.setUserAgent('Mozilla/5.0 (iPhone; CPU iPhone OS 18_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.1 Mobile/15E148 Safari/604.1');
   phone.webContents.on('console-message', (_event, level, message) => { if (level >= 3) errors.push(message); });
   const protectedInvitation = server.devices.invite(hashPassword(customPassword));
   await phone.loadURL(base + '/');
   await eventually(phone, "document.querySelector('#overlay-status').textContent.includes('Scan QR')");
-  await phone.loadURL(`${base}/#invitation=${protectedInvitation.token}`);
+  await openInvitation(`${base}/#invitation=${protectedInvitation.token}`);
   await eventually(phone, "!document.querySelector('#pairing-form').hidden");
   await eventually(phone, `(() => {
     const overlay = document.querySelector('#connection-overlay');
@@ -100,6 +107,15 @@ app.whenReady().then(async () => {
   await phone.webContents.executeJavaScript(`document.querySelector('#pairing-passcode').value = '${customPassword}'; document.querySelector('#pairing-form').requestSubmit()`);
   await eventually(phone, "document.querySelector('#status-text').textContent === 'Connected'");
   assert.equal(await phone.webContents.executeJavaScript("getComputedStyle(document.querySelector('#connection-overlay')).display"), 'none');
+  assert.deepEqual(server.devices.list().map((device) => device.name), ['iPhone · Safari']);
+  // Scanning a new code in the same browser replaces its entry instead of adding a duplicate.
+  const firstCredential = await phone.webContents.executeJavaScript("localStorage.getItem('quickclip_device_token')");
+  await openInvitation(`${base}/#invitation=${server.devices.invite(hashPassword(customPassword)).token}`);
+  await eventually(phone, "!document.querySelector('#pairing-form').hidden");
+  await phone.webContents.executeJavaScript(`document.querySelector('#pairing-passcode').value = '${customPassword}'; document.querySelector('#pairing-form').requestSubmit()`);
+  await eventually(phone, `localStorage.getItem('quickclip_device_token') !== ${JSON.stringify(firstCredential)} && document.querySelector('#status-text').textContent === 'Connected'`);
+  assert.equal(server.devices.list().length, 1, 're-pairing did not add a duplicate');
+  assert.equal(server.devices.authenticate(firstCredential), null, 'the replaced credential was revoked');
   await phone.webContents.executeJavaScript(`
     window.smokeCopied = null;
     Object.defineProperty(navigator, 'clipboard', { configurable: true, value: {
@@ -182,7 +198,7 @@ app.whenReady().then(async () => {
   await new Promise(resolve => setTimeout(resolve, 400));
   fs.writeFileSync(path.resolve(__dirname, '../.test-output/pairing-password-dark.png'), (await desktop.webContents.capturePage()).toPNG());
   await desktop.webContents.executeJavaScript("document.documentElement.classList.remove('dark-mode')");
-  const offline = server.devices.pair(server.devices.invite().token, 'Offline tablet');
+  const offline = server.devices.pair(server.devices.invite().token, 'iPad · Safari');
   const previousPasswordHash = savedPasswordHash;
   await desktop.webContents.executeJavaScript("document.querySelector('#pairingPassword').value = 'Changed password!'; document.querySelector('#pairingPasswordForm').requestSubmit()");
   await eventually(desktop, "document.querySelector('#passwordDeviceReview').open");
@@ -284,7 +300,7 @@ app.whenReady().then(async () => {
   await eventually(phone, "document.body.textContent.includes('Device access was removed')");
   assert.equal(await phone.webContents.executeJavaScript("localStorage.getItem('quickclip_device_token')"), null);
   assert.deepEqual(errors, []);
-  console.log('PASS: native pixel change detection and PNG decoding, phone text/image acknowledgements, full-resolution Copy, pause/resume, reload hydration, desktop preload and Copy, pairing, remote-access blocking, reenabling, and device revocation.');
+  console.log('PASS: native pixel change detection and PNG decoding, phone text/image acknowledgements, full-resolution Copy, pause/resume, reload hydration, desktop preload and Copy, pairing, re-pairing without duplicates, remote-access blocking, reenabling, and device revocation.');
 }).then(() => finish(0), (err) => { console.error(err); finish(1); });
 
 function finish(code) {
