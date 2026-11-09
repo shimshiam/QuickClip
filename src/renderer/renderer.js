@@ -256,6 +256,7 @@
         section.className = 'review-device';
         const name = document.createElement('strong'); name.className = 'review-device-name';
         name.textContent = device.name + (device.connected ? ' · Connected' : ' · Offline');
+        name.title = pairedLabel(device);
         const controls = document.createElement('div'); controls.className = 'review-device-controls';
         const keep = document.createElement('button');
         keep.type = 'button'; keep.className = 'review-keep';
@@ -399,7 +400,7 @@
       const name = document.createElement('span'); name.textContent = device.name; heading.append(name);
       const status = document.createElement('p'); status.className = 'drawer-description';
       const permissions = { view: true, write: true, access: true, ...device.permissions };
-      status.textContent = !permissions.access ? 'Access off' : device.connected ? 'Connected' : 'Offline';
+      status.textContent = (!permissions.access ? 'Access off' : device.connected ? 'Connected' : 'Offline') + ' · ' + pairedLabel(device);
       identity.append(heading, status); card.append(identity);
       const controls = document.createElement('div'); controls.className = 'device-controls';
       const actions = document.createElement('div'); actions.className = 'device-permissions';
@@ -464,7 +465,7 @@
       const row = document.createElement('div'); row.className = 'settings-row settings-device-row';
       const label = document.createElement('div'); label.className = 'settings-label settings-device-name';
       const name = document.createElement('span'); name.className = 'settings-title'; name.textContent = device.name; name.title = device.name;
-      const paired = document.createElement('span'); paired.className = 'settings-desc'; paired.textContent = device.connected ? 'Connected' : 'Offline'; paired.title = 'Paired ' + new Date(device.pairedAt).toLocaleString();
+      const paired = document.createElement('span'); paired.className = 'settings-desc'; paired.textContent = (device.connected ? 'Connected' : 'Offline') + ' · ' + pairedLabel(device); paired.title = 'Paired ' + new Date(device.pairedAt).toLocaleString();
       label.append(name, paired);
       const controls = document.createElement('div'); controls.className = 'settings-device-controls';
       const permissions = { write: true, access: true, view: true, ...device.permissions };
@@ -868,6 +869,12 @@
   }
 
   // ---------- Utility Helpers ----------
+  function pairedLabel(device) {
+    const date = new Date(device.pairedAt);
+    if (!Number.isFinite(date.getTime())) return 'Paired';
+    return 'Paired ' + date.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  }
+
   function escapeHTML(str) {
     const div = document.createElement('div');
     div.textContent = str;
