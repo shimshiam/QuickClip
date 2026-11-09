@@ -391,3 +391,17 @@ test('per-device permissions block reads, broadcasts and writes, invalidate tick
   s.devices.updatePermissions(s.credential.deviceId, { access: true });
   assert.equal((await fetch(s.base + '/api/history', { headers: s.headers })).status, 200);
 });
+
+test('pairing again from the same browser replaces its entry over HTTP', async (t) => {
+  const s = await setup(t);
+  const repair = async (body) => fetch(s.base + '/api/pair', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ invitation: s.devices.invite().token, name: 'iPhone · Safari', ...body }) });
+  const response = await repair({ replaces: s.credential.token });
+  assert.equal(response.status, 200);
+  const fresh = await response.json();
+  assert.deepEqual(Object.keys(fresh).sort(), ['deviceId', 'token']);
+  assert.equal(s.devices.list().length, 1);
+  assert.equal(s.devices.list()[0].name, 'iPhone · Safari');
+  assert.equal((await fetch(s.base + '/api/status', { headers: s.headers })).status, 401, 'old credential is revoked');
+  assert.equal((await fetch(s.base + '/api/status', { headers: { Authorization: 'Bearer ' + fresh.token } })).status, 200);
+});

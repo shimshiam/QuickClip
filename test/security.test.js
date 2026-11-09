@@ -293,3 +293,35 @@ test('expired devices are pruned at startup and before pairing; a clock moved ba
   now += 30 * DAY + 91 * DAY;
   assert.equal(fresh.authenticate(kept.token), null);
 });
+
+test('re-pairing from an already paired browser replaces its entry and keeps its permissions', (t) => {
+  const root = temporary(t);
+  const devices = createDeviceStore(root);
+  const revoked = []; devices.onRevoke((id) => revoked.push(id));
+  const first = devices.pair(devices.invite().token, 'iPhone · Safari');
+  const other = devices.pair(devices.invite().token, 'iPhone · Chrome');
+  devices.updatePermissions(first.deviceId, { write: false });
+  const again = devices.pair(devices.invite().token, 'iPhone · Safari', undefined, first.token);
+  assert.deepEqual(devices.list().map((device) => device.name), ['iPhone · Chrome', 'iPhone · Safari']);
+  assert.equal(devices.authenticate(first.token), null, 'old credential no longer works');
+  assert.equal(devices.authenticate(again.token), again.deviceId);
+  assert.equal(devices.allows(again.deviceId, 'write'), false, 're-pairing never widens access');
+  assert.deepEqual(revoked, [first.deviceId], 'old sockets are closed');
+  // Unknown, malformed or oversized credentials are ignored and add a new entry as before.
+  for (const replaces of ['not-a-credential', 42, 'x'.repeat(300), '']) {
+    devices.pair(devices.invite().token, 'Other', undefined, replaces);
+  }
+  assert.equal(devices.list().length, 6);
+  assert.equal(devices.authenticate(other.token), other.deviceId);
+});
+
+test('replacing an entry frees its slot when the device limit is reached', (t) => {
+  const root = temporary(t);
+  const devices = createDeviceStore(root);
+  const paired = [];
+  for (let i = 0; i < 20; i++) paired.push(devices.pair(devices.invite().token, 'Phone ' + i));
+  assert.throws(() => devices.pair(devices.invite().token, 'One more'), /Remove a trusted device/);
+  const replaced = devices.pair(devices.invite().token, 'Phone 0', undefined, paired[0].token);
+  assert.ok(replaced.token);
+  assert.equal(devices.list().length, 20);
+});

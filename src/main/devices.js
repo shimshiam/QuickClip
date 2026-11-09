@@ -52,7 +52,7 @@ function createDeviceStore(dataDir, now = Date.now) {
       if (passwordHash) { invitation.passwordHash = passwordHash; invitation.attempts = 0; }
       return { token: invitation.token, expires: invitation.expires };
     },
-    pair(token, name, passcode) {
+    pair(token, name, passcode, replaces) {
       if (typeof token !== 'string' || !invitation || invitation.expires <= now()
         || digest(token) !== digest(invitation.token)) return null;
       if (invitation.passwordHash) {
@@ -64,12 +64,20 @@ function createDeviceStore(dataDir, now = Date.now) {
         }
       }
       pruneExpired();
-      if (devices.length >= 20) throw new Error('Remove a trusted device before pairing another');
+      // Re-pairing from a browser that is already paired replaces its entry instead of
+      // adding a duplicate. Proving the old credential is required, and the new entry
+      // keeps the old entry's permissions so re-pairing never widens access.
+      const previous = typeof replaces === 'string' && replaces && replaces.length <= 256
+        ? devices.find((device) => device.tokenHash === digest(replaces)) : null;
+      const remaining = previous ? devices.filter((device) => device.id !== previous.id) : devices;
+      if (remaining.length >= 20) throw new Error('Remove a trusted device before pairing another');
       const credential = crypto.randomBytes(32).toString('hex');
       const device = { id: crypto.randomUUID(), name: typeof name === 'string' ? name.trim().slice(0, 80) || 'Phone' : 'Phone',
-        tokenHash: digest(credential), pairedAt: now(), lastSeenAt: now() };
-      commit([...devices, device]);
+        tokenHash: digest(credential), pairedAt: now(), lastSeenAt: now(),
+        ...(previous?.permissions ? { permissions: { ...previous.permissions } } : {}) };
+      commit([...remaining, device]);
       invitation = null;
+      if (previous) listeners.forEach((listener) => listener(previous.id));
       return { token: credential, deviceId: device.id };
     },
     authenticate(token) {

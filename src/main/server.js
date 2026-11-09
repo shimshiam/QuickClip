@@ -139,7 +139,7 @@ function createServer(certData, options) {
   app.post('/api/pair', express.json({ limit: '4kb' }), (req, res, next) => {
     if (!policy.get().remoteAccess) return res.status(403).json({ error: 'Remote access is blocked on Windows' });
     try {
-      const result = devices.pair(req.body?.invitation, req.body?.name, req.body?.passcode);
+      const result = devices.pair(req.body?.invitation, req.body?.name, req.body?.passcode, req.body?.replaces);
       if (!result) return res.status(401).json({ error: 'Pairing code expired or already used. Generate a new code on Windows.' });
       if (result.passcodeRequired) return res.status(403).json(result);
       res.json(result);
