@@ -67,6 +67,8 @@ Scan the QR code after installing and trusting the certificate. With **Require p
 
 The phone stores its device credential locally and removes the invitation from the visible URL. A pending invitation survives a page refresh in the same tab. Opening a new QR link in an existing tab restarts pairing.
 
+Scanning a new code in a browser that is already paired replaces that browser's entry on Windows instead of adding a duplicate; the new entry keeps the old entry's Access, View, and Write permissions. Each entry is named after the device and browser, for example **iPhone · Safari**, **iPhone · Chrome**, or **iPhone · Home Screen app**, and shows when it was paired. Safari, Chrome, and a Home Screen app each keep their own credential, so each one appears as a separate entry.
+
 ### Clipboard in both directions
 
 <table>
@@ -115,10 +117,10 @@ Files uploaded from the phone are stored under QuickClip's per-user `runtime/rec
 
 ### Manage devices
 
-Click the connection badge in the top-right corner to open **Devices**. Each paired device shows its connection state and separate **Access**, **View**, and **Write** controls. The same permissions are available under **Settings > Security**.
+Click the connection badge in the top-right corner to open **Devices**. Each paired device shows its name (device and browser), connection state, pairing date, and separate **Access**, **View**, and **Write** controls. The same permissions are available under **Settings > Security**.
 
 <p align="center">
-  <img src="./assets/readme/windows-device-permissions.png" alt="Current Devices panel showing the connected test browser and permission controls" width="520">
+  <img src="./assets/readme/windows-device-permissions.png" alt="Devices panel showing iPhone · Safari, connected, with its pairing date and permission controls" width="520">
 </p>
 <p align="center"><sub>Allow a device to view shared content, send content to Windows, or do both. Turn off Access to block it while keeping its pairing, or choose Remove to require pairing again.</sub></p>
 
@@ -302,7 +304,7 @@ In the Windows Pair tab, select **Create pairing code**, or select **New pairing
 <p align="center">
   <img src="./assets/readme/windows-password-device-review.png" alt="Compact Change password dialog with Keep all, Remove all, individual device choices, and Access, View, and Write icons" width="520">
 </p>
-<p align="center"><sub>Isolated test capture: keep the connected browser with Write off and remove the offline tablet. Choices take effect only after Save changes. The background QR is no longer valid.</sub></p>
+<p align="center"><sub>Isolated test capture: keep the connected iPhone with Write off and remove the offline iPad. Choices take effect only after Save changes. The background QR is no longer valid.</sub></p>
 
 - Choose **Keep all** or **Remove all**, or toggle **Keep / Remove** for individual devices.
 - Adjust **Access**, **View**, and **Write** using the same icon buttons as the Devices drawer. Hover for the permission name and current state. Controls also have accessible labels; permissions are disabled for devices marked for removal, and View/Write controls are disabled when Access is off.
