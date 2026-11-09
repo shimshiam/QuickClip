@@ -97,7 +97,9 @@
         const pair = async (passcode) => {
         const response = await fetch('/api/pair', { method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ invitation, passcode, name: /iPhone|iPad/.test(navigator.userAgent) ? 'iPhone / iPad' : 'Browser' }) });
+          // `replaces` lets Windows swap this browser's previous entry for the new one
+          // instead of listing the same browser twice.
+          body: JSON.stringify({ invitation, passcode, name: QuickClipDevice.currentDeviceLabel(), replaces: authToken || undefined }) });
         const result = await response.json();
         if (result.passcodeRequired) return result;
         if (!response.ok) throw new Error(result.error || 'Pairing failed');

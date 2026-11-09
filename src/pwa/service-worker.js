@@ -1,5 +1,5 @@
 // QuickClip app-shell cache. API responses are never cached.
-const CACHE_NAME = 'quickclip-v13';
+const CACHE_NAME = 'quickclip-v14';
 const APP_SHELL = [
   '/',
   '/index.html',
@@ -7,6 +7,7 @@ const APP_SHELL = [
   '/file-preview.js',
   '/file-preview.css',
   '/delivery.js',
+  '/device-label.js',
   '/styles.css',
   '/fonts/just-sans-regular.woff2',
   '/fonts/just-sans-extrabold.woff2',
